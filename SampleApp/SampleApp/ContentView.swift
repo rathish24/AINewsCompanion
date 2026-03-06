@@ -1,31 +1,175 @@
 import SwiftUI
-import ArticleBottomSheet
+import NewsCompanionKit
 
 struct ContentView: View {
-    @State private var articleURL: URL?
+    @State private var companionURL: URL?
+    /// Effective key: from ApiKeys.xcconfig (Bundle) first, then Keychain. Refreshed on appear and after saving.
+    @State private var effectiveAPIKey: String? = Self.resolveAPIKey()
+    @State private var showKeyEntry = false
 
     private static let sampleArticleURL = URL(string: "https://news.sky.com/story/four-arrested-on-suspicion-of-syping-for-iran-13515093")!
+    private static let placeholderKey = "YOUR_GEMINI_API_KEY"
+
+    /// Key from .xcconfig (Info.plist) or Keychain. Treats placeholder and empty as nil.
+    static func resolveAPIKey() -> String? {
+        let fromBundle = Bundle.main.object(forInfoDictionaryKey: "GEMINI_API_KEY") as? String
+        let fromKeychain = KeychainHelper.getAPIKey()
+        let raw = fromBundle?.trimmingCharacters(in: .whitespaces).nilIfEmpty
+            ?? fromKeychain?.trimmingCharacters(in: .whitespaces).nilIfEmpty
+        guard let key = raw, !key.isEmpty, key != placeholderKey else { return nil }
+        return key
+    }
+
+    private var companionConfig: NewsCompanionKit.Config? {
+        guard let key = effectiveAPIKey else { return nil }
+        return NewsCompanionKit.Config(apiKey: key)
+    }
 
     var body: some View {
         VStack(spacing: 24) {
-            Text("Article Bottom Sheet")
+            Text("News Companion")
                 .font(.title2)
                 .fontWeight(.semibold)
 
-            Button(action: openArticle) {
-                Label("View Article", systemImage: "doc.text")
-                    .font(.headline)
-                    .padding()
+            if effectiveAPIKey != nil {
+                Button(action: openCompanion) {
+                    Label("AI Companion", systemImage: "sparkles")
+                        .font(.headline)
+                        .padding()
+                }
+                .buttonStyle(.borderedProminent)
+            } else {
+                Text("Set your Gemini API key in ApiKeys.xcconfig (or here) to use the AI companion.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal)
+                Button("Set API key", action: { showKeyEntry = true })
+                    .buttonStyle(.borderedProminent)
             }
-            .buttonStyle(.borderedProminent)
+
+            Button("Change or clear API key", action: { showKeyEntry = true })
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .articleSheet(url: $articleURL)
-        .modifier(PresentationDetentsWhenAvailable())
+        .sheet(isPresented: $showKeyEntry) {
+            APIKeyEntryView(
+                initialKey: effectiveAPIKey,
+                onSave: { key in
+                    if key.isEmpty {
+                        KeychainHelper.deleteAPIKey()
+                        effectiveAPIKey = nil
+                    } else if KeychainHelper.setAPIKey(key) {
+                        effectiveAPIKey = key
+                    }
+                    showKeyEntry = false
+                },
+                onCancel: { showKeyEntry = false }
+            )
+        }
+        .sheet(item: Binding(
+            get: { companionURL.map(IdentifiableCompanionURL.init) },
+            set: { companionURL = $0?.url }
+        )) { identifiable in
+            if let config = companionConfig {
+                CompanionSheetView(url: identifiable.url, config: config) {
+                    companionURL = nil
+                }
+                .modifier(PresentationDetentsWhenAvailable())
+            } else {
+                MissingKeySheetView(onDismiss: { companionURL = nil }, onSetKey: { companionURL = nil; showKeyEntry = true })
+            }
+        }
+        .onAppear { effectiveAPIKey = Self.resolveAPIKey() }
     }
 
-    private func openArticle() {
-        articleURL = Self.sampleArticleURL
+    private func openCompanion() {
+        companionURL = Self.sampleArticleURL
+    }
+}
+
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
+}
+
+private struct MissingKeySheetView: View {
+    let onDismiss: () -> Void
+    let onSetKey: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 16) {
+                Text("API key is missing. Add it in ApiKeys.xcconfig or set it below.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                Button("Set API key", action: onSetKey)
+                    .buttonStyle(.borderedProminent)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .navigationTitle("AI Companion")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done", action: onDismiss)
+                }
+            }
+        }
+    }
+}
+
+private struct IdentifiableCompanionURL: Identifiable {
+    let url: URL
+    var id: String { url.absoluteString }
+}
+
+// MARK: - API key entry (key never in source or .env)
+
+struct APIKeyEntryView: View {
+    let initialKey: String?
+    let onSave: (String) -> Void
+    let onCancel: () -> Void
+
+    @State private var keyInput: String = ""
+    @FocusState private var keyFocused: Bool
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Your Gemini API key is stored only in the device Keychain. It is never saved in the app code or in files.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
+                SecureField("Gemini API key", text: $keyInput)
+                    .textContentType(.password)
+                    .autocapitalization(.none)
+                    .autocorrectionDisabled()
+                    .focused($keyFocused)
+                    .onAppear {
+                        keyInput = initialKey ?? ""
+                        keyFocused = true
+                    }
+
+                Text("Get a key at [Google AI Studio](https://aistudio.google.com/apikey)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding()
+            .navigationTitle("API key")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel", action: onCancel)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save", action: { onSave(keyInput.trimmingCharacters(in: .whitespaces)) })
+                }
+                ToolbarItem(placement: .bottomBar) {
+                    Button("Clear key", role: .destructive, action: { onSave("") })
+                }
+            }
+        }
     }
 }
 

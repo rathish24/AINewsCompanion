@@ -1,12 +1,45 @@
-# Article Bottom Sheet
+# AINewsCompanion
 
-A Swift Package Manager (SPM) library for iOS that fetches a news article URL and displays the article **as plain text** in a bottom sheet—no WebView.
+This repo provides two Swift packages:
+
+1. **NewsCompanionKit** – AI-powered companion for news articles (summary, bullets, why it matters, topic chips). Uses Gemini; you supply the API key.
+2. **ArticleBottomSheet** – Plain article text in a bottom sheet (no AI).
+
+## NewsCompanionKit (recommended)
+
+When the user taps the AI companion on an article, the app shows:
+- One-line summary
+- 3–5 bullet points
+- Why the story matters
+- Tappable topic chips (e.g. “What happens next?”, “Key players”)
+
+**Requirements:** A [Gemini API key](https://aistudio.google.com/apikey). Pass it in `NewsCompanionKit.Config(apiKey: "your-key")`.
+
+### Quick start
+
+```swift
+import SwiftUI
+import NewsCompanionKit
+
+// Set your key when ready (e.g. from config or env).
+let config = NewsCompanionKit.Config(apiKey: "YOUR_GEMINI_API_KEY")
+
+// Present companion sheet when user taps AI icon:
+.companionSheet(url: $articleURL, config: config)
+.presentationDetents([.medium, .large])
+```
+
+Or generate insights only: `let result = try await NewsCompanionKit.generate(url: url, config: config)`.
+
+---
+
+## ArticleBottomSheet (plain text)
 
 ## Features
 
-- **Text-only article view**: Fetches HTML from the URL and extracts the main article body as text using [SwiftSoup](https://github.com/scinfu/SwiftSoup).
-- **Bottom sheet UI**: Designed to be presented as a sheet (e.g. with `.presentationDetents([.medium, .large])`).
-- **SwiftUI**: Built with SwiftUI; easy to integrate into any SwiftUI app.
+- **Text-only article view**: Fetches HTML and extracts article body using [SwiftSoup](https://github.com/scinfu/SwiftSoup).
+- **Bottom sheet UI**: Present with `.presentationDetents([.medium, .large])`.
+- **SwiftUI**: Easy integration.
 
 ## Requirements
 
@@ -22,16 +55,16 @@ Add the package to your app:
 
 1. In Xcode: **File → Add Package Dependencies…**
 2. Enter the repository URL (or add a **Local** path if you have the package on disk).
-3. Add the **ArticleBottomSheet** product to your app target.
+3. Add **NewsCompanionKit** (and optionally **ArticleBottomSheet**) to your app target.
 
-Or add to your `Package.swift`:
+Or in `Package.swift`:
 
 ```swift
 dependencies: [
     .package(url: "https://github.com/your-org/AINewsCompanion.git", from: "1.0.0"),
 ],
 targets: [
-    .target(name: "YourApp", dependencies: ["ArticleBottomSheet"]),
+    .target(name: "YourApp", dependencies: ["NewsCompanionKit"]),
 ]
 ```
 
@@ -84,11 +117,11 @@ You need to wrap `URL` in an `Identifiable` type for `sheet(item:)`, or use the 
 
 ## Sample App
 
-The **SampleApp** folder contains an iOS app that demonstrates the library:
+The **SampleApp** demonstrates **NewsCompanionKit**:
 
 1. Open `SampleApp/SampleApp.xcodeproj` in Xcode.
-2. The app depends on the **ArticleBottomSheet** package via a **local** package reference (path `..`), so the repo root must contain `Package.swift` and `Sources/ArticleBottomSheet/`.
-3. Run the app, tap **View Article**, and the article loads and appears as text in a bottom sheet.
+2. Add your Gemini API key in `ContentView.swift`: replace `YOUR_GEMINI_API_KEY` with your key from [Google AI Studio](https://aistudio.google.com/apikey).
+3. Run the app, tap **AI Companion**, and the sheet shows skeleton loading then the AI-generated summary, bullets, “why it matters,” and topic chips.
 
 ## How it works
 
@@ -109,12 +142,21 @@ The **SampleApp** folder contains an iOS app that demonstrates the library:
 AINewsCompanion/
 ├── Package.swift
 ├── README.md
-├── PLAN.md
+├── news_companion_plan.md
 ├── Sources/
+│   ├── NewsCompanionKit/
+│   │   ├── Models.swift
+│   │   ├── Protocols.swift
+│   │   ├── ArticleFetcher.swift
+│   │   ├── GeminiClient.swift
+│   │   ├── ConversationEngine.swift
+│   │   ├── NewsCompanionKit.swift    # generate(url:config:)
+│   │   ├── CompanionSheetView.swift
+│   │   └── CompanionSheetModifier.swift
 │   └── ArticleBottomSheet/
-│       ├── ArticleBottomSheet.swift   # Public API & view modifier
-│       ├── ArticleSheetView.swift     # Sheet content (loading + text)
-│       └── ArticleExtractor.swift     # Fetch + SwiftSoup extraction
+│       ├── ArticleBottomSheet.swift
+│       ├── ArticleSheetView.swift
+│       └── ArticleExtractor.swift
 └── SampleApp/
     ├── SampleApp.xcodeproj
     └── SampleApp/

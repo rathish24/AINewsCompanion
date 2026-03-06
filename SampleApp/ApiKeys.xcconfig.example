@@ -1,0 +1,3 @@
+// Copy to ApiKeys.xcconfig and set your key. Get one at https://aistudio.google.com/apikey
+// Always use double quotes around the key value.
+GEMINI_API_KEY = "YOUR_GEMINI_API_KEY"

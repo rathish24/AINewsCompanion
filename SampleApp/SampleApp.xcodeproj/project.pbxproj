@@ -3,13 +3,16 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 56;
+	objectVersion = 60;
 	objects = {
 
 /* Begin PBXBuildFile section */
 		A1B1C1D10001 /* SampleAppApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B1C1D20001 /* SampleAppApp.swift */; };
 		A1B1C1D10002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B1C1D20002 /* ContentView.swift */; };
 		A1B1C1D10003 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1B1C1D20003 /* Assets.xcassets */; };
+		A1B1C1D10004 /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B1C1D20004 /* KeychainHelper.swift */; };
+		BB591B602F5B4EAE00CEC212 /* ArticleBottomSheet in Frameworks */ = {isa = PBXBuildFile; productRef = A1B1C1D50001 /* ArticleBottomSheet */; };
+		BB591B612F5B4EAE00CEC212 /* NewsCompanionKit in Frameworks */ = {isa = PBXBuildFile; productRef = A1B1C1D50002 /* NewsCompanionKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -17,6 +20,8 @@
 		A1B1C1D20001 /* SampleAppApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SampleAppApp.swift; sourceTree = "<group>"; };
 		A1B1C1D20002 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		A1B1C1D20003 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		A1B1C1D20004 /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
+		A1B1C1D20005 /* ApiKeys.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = ApiKeys.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -24,25 +29,12 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				BB591B612F5B4EAE00CEC212 /* NewsCompanionKit in Frameworks */,
+				BB591B602F5B4EAE00CEC212 /* ArticleBottomSheet in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
-
-/* Begin XCLocalSwiftPackageReference section */
-		A1B1C1D40001 /* ArticleBottomSheet */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = ..;
-		};
-/* End XCLocalSwiftPackageReference section */
-
-/* Begin XCSwiftPackageProductDependency section */
-		A1B1C1D50001 /* ArticleBottomSheet */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = ArticleBottomSheet;
-			package = A1B1C1D40001 /* ArticleBottomSheet */;
-		};
-/* End XCSwiftPackageProductDependency section */
 
 /* Begin PBXGroup section */
 		A1B1C1D60001 = {
@@ -50,6 +42,7 @@
 			children = (
 				A1B1C1D60002 /* SampleApp */,
 				A1B1C1D60003 /* Products */,
+				A1B1C1D20005 /* ApiKeys.xcconfig */,
 			);
 			sourceTree = "<group>";
 		};
@@ -58,6 +51,7 @@
 			children = (
 				A1B1C1D20001 /* SampleAppApp.swift */,
 				A1B1C1D20002 /* ContentView.swift */,
+				A1B1C1D20004 /* KeychainHelper.swift */,
 				A1B1C1D20003 /* Assets.xcassets */,
 			);
 			path = SampleApp;
@@ -81,6 +75,7 @@
 				A1B1C1D70002 /* Sources */,
 				A1B1C1D30001 /* Frameworks */,
 				A1B1C1D70003 /* Resources */,
+				A1B1C1D70004 /* Inject API key into Info.plist */,
 			);
 			buildRules = (
 			);
@@ -89,6 +84,7 @@
 			name = SampleApp;
 			packageProductDependencies = (
 				A1B1C1D50001 /* ArticleBottomSheet */,
+				A1B1C1D50002 /* NewsCompanionKit */,
 			);
 			productName = SampleApp;
 			productReference = A1B1C1D20000 /* SampleApp.app */;
@@ -114,7 +110,7 @@
 			);
 			mainGroup = A1B1C1D60001;
 			packageReferences = (
-				A1B1C1D40001 /* ArticleBottomSheet */,
+				A1B1C1D40001 /* XCLocalSwiftPackageReference ".." */,
 			);
 			productRefGroup = A1B1C1D60003 /* Products */;
 			projectDirPath = "";
@@ -136,6 +132,28 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		A1B1C1D70004 /* Inject API key into Info.plist */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(BUILT_PRODUCTS_DIR)/$(WRAPPER_NAME)/Info.plist",
+			);
+			name = "Inject API key into Info.plist";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "KEY=\"${GEMINI_API_KEY}\"\nKEY=\"${KEY#\\\"}\"\nKEY=\"${KEY%\\\"}\"\nINFOPLIST=\"${BUILT_PRODUCTS_DIR}/${WRAPPER_NAME}/Info.plist\"\nif [ -f \"$INFOPLIST\" ] && [ -n \"$KEY\" ]; then\n  /usr/libexec/PlistBuddy -c \"Delete :GEMINI_API_KEY\" \"$INFOPLIST\" 2>/dev/null\n  /usr/libexec/PlistBuddy -c \"Add :GEMINI_API_KEY string \\\"$KEY\\\"\" \"$INFOPLIST\"\nfi\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		A1B1C1D70002 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -143,6 +161,7 @@
 			files = (
 				A1B1C1D10001 /* SampleAppApp.swift in Sources */,
 				A1B1C1D10002 /* ContentView.swift in Sources */,
+				A1B1C1D10004 /* KeychainHelper.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -151,6 +170,7 @@
 /* Begin XCBuildConfiguration section */
 		A1B1C1DA0001 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = A1B1C1D20005 /* ApiKeys.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -182,6 +202,7 @@
 		};
 		A1B1C1DA0002 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = A1B1C1D20005 /* ApiKeys.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -207,6 +228,7 @@
 		};
 		A1B1C1DA0003 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = A1B1C1D20005 /* ApiKeys.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -220,6 +242,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -235,6 +258,7 @@
 		};
 		A1B1C1DA0004 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = A1B1C1D20005 /* ApiKeys.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -248,6 +272,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -283,6 +308,26 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		A1B1C1D40001 /* XCLocalSwiftPackageReference ".." */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ..;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		A1B1C1D50001 /* ArticleBottomSheet */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A1B1C1D40001 /* XCLocalSwiftPackageReference ".." */;
+			productName = ArticleBottomSheet;
+		};
+		A1B1C1D50002 /* NewsCompanionKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A1B1C1D40001 /* XCLocalSwiftPackageReference ".." */;
+			productName = NewsCompanionKit;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = A1B1C1D90001 /* Project object */;
 }
