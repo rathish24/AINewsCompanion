@@ -9,7 +9,7 @@ struct ContentView: View {
     @State private var effectiveAPIKey: String? = Self.resolveAPIKey()
     @State private var showKeyEntry = false
 
-    private static let sampleArticleURL = URL(string: "https://news.sky.com/story/four-arrested-on-suspicion-of-syping-for-iran-13515093")!
+    private static let sampleArticleURL = URL(string: "https://news.sky.com/story/two-children-among-seven-dead-in-russian-missile-strikes-in-ukraine-13516381")!
     private static let placeholderKey = "YOUR_GEMINI_API_KEY"
 
     /// Key from .xcconfig (Info.plist) or Keychain. Treats placeholder and empty as nil.
@@ -207,10 +207,13 @@ struct APIKeyEntryView: View {
 }
 
 private struct PresentationDetentsWhenAvailable: ViewModifier {
+    @State private var selectedDetent: PresentationDetent = .large
+
     @ViewBuilder
     func body(content: Content) -> some View {
         if #available(iOS 16.0, *) {
-            content.presentationDetents([.medium, .large])
+            content
+                .presentationDetents([.medium, .large], selection: $selectedDetent)
         } else {
             content
         }

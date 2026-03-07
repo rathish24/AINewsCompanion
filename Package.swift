@@ -19,6 +19,11 @@ let package = Package(
             dependencies: ["SwiftSoup"],
             path: "Sources/NewsCompanionKit",
             resources: [.process("Resources")]
+        ),
+        .testTarget(
+            name: "NewsCompanionKitTests",
+            dependencies: ["NewsCompanionKit"],
+            path: "Tests/NewsCompanionKitTests"
         )
     ]
 )

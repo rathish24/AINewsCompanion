@@ -116,6 +116,7 @@ private struct AIResponse: Decodable {
     struct TopicPart: Decodable {
         let title: String?
         let prompt: String?
+        let summary: String?
     }
     struct FactCheckPart: Decodable {
         let claim: String?
@@ -139,10 +140,12 @@ private struct AIResponse: Decodable {
                   let rawPrompt = t.prompt?.trimmingCharacters(in: .whitespacesAndNewlines), !rawPrompt.isEmpty else { return nil }
             let title = rawTitle.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
             let prompt = rawPrompt.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            let trimmedSummary = t.summary?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let summary: String? = (trimmedSummary?.isEmpty == false) ? trimmedSummary : nil
             let dedupeKey = "\(title.lowercased())|\(prompt.lowercased())"
             guard !seenTopicKeys.contains(dedupeKey) else { return nil }
             seenTopicKeys.insert(dedupeKey)
-            return TopicChip(title: title, prompt: prompt)
+            return TopicChip(title: title, prompt: prompt, summary: summary)
         }
 
         // Full pipeline: validate → semantic dedupe → score → fallback → best 5-6

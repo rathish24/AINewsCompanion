@@ -33,10 +33,17 @@ public struct Summary: Sendable, Codable {
 public struct TopicChip: Sendable, Codable {
     public let title: String
     public let prompt: String
+    /// Optional summary shown when the chip is selected (2-3 sentences).
+    public let summary: String?
 
-    public init(title: String, prompt: String) {
+    public init(title: String, prompt: String, summary: String? = nil) {
         self.title = title
         self.prompt = prompt
+        if let trimmed = summary?.trimmingCharacters(in: .whitespaces), !trimmed.isEmpty {
+            self.summary = trimmed
+        } else {
+            self.summary = nil
+        }
     }
 }
 

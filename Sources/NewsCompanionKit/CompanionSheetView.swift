@@ -165,71 +165,114 @@ private struct SkeletonLoadingView: View {
 
 // MARK: - Loaded content
 
+private let topicSummaryScrollId = "topicSummary"
+
 private struct CompanionContentView: View {
     let result: CompanionResult
     let onTopicTap: ((TopicChip) -> Void)?
     let onTelemetry: ((TelemetryEvent) -> Void)?
 
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                Text(result.summary.oneLiner)
-                    .font(.headline)
-                    .fixedSize(horizontal: false, vertical: true)
+    @State private var selectedTopicIndex: Int?
 
-                if !result.summary.bullets.isEmpty {
-                    VStack(alignment: .leading, spacing: 8) {
-                        ForEach(Array(result.summary.bullets.enumerated()), id: \.offset) { _, bullet in
-                            HStack(alignment: .top, spacing: 8) {
-                                Text("•")
-                                    .font(.body)
-                                Text(bullet)
-                                    .font(.subheadline)
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    Text(result.summary.oneLiner)
+                        .font(.headline)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    if !result.summary.bullets.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            ForEach(Array(result.summary.bullets.enumerated()), id: \.offset) { _, bullet in
+                                HStack(alignment: .top, spacing: 8) {
+                                    Text("•")
+                                        .font(.body)
+                                    Text(bullet)
+                                        .font(.subheadline)
+                                }
+                            }
+                        }
+                    }
+
+                    if !result.summary.whyItMatters.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Why it matters")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                                .foregroundStyle(.secondary)
+                            Text(result.summary.whyItMatters)
+                                .font(.subheadline)
+                        }
+                    }
+
+                    if !result.topics.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Explore")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                                .foregroundStyle(.secondary)
+                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 8)], spacing: 8) {
+                                ForEach(Array(result.topics.enumerated()), id: \.offset) { index, topic in
+                                    let isSelected = selectedTopicIndex == index
+                                    Button {
+                                        if selectedTopicIndex == index {
+                                            selectedTopicIndex = nil
+                                        } else {
+                                            selectedTopicIndex = index
+                                            onTopicTap?(topic)
+                                            onTelemetry?(.topicChipTaps)
+                                        }
+                                    } label: {
+                                        Text(topic.title)
+                                            .font(.caption)
+                                            .lineLimit(2)
+                                            .multilineTextAlignment(.center)
+                                            .padding(.horizontal, 12)
+                                            .padding(.vertical, 8)
+                                            .frame(maxWidth: .infinity, alignment: .center)
+                                            .background(isSelected ? Color.accentColor.opacity(0.35) : Color.accentColor.opacity(0.15))
+                                            .overlay(
+                                                Capsule()
+                                                    .stroke(isSelected ? Color.accentColor : .clear, lineWidth: 2)
+                                            )
+                                            .clipShape(Capsule())
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            if let idx = selectedTopicIndex, idx < result.topics.count {
+                                let topic = result.topics[idx]
+                                let summaryText = topic.summary.flatMap { s in s.isEmpty ? nil : s }
+                                    ?? topic.prompt
+                                if !summaryText.isEmpty {
+                                    Text(summaryText)
+                                        .font(.subheadline)
+                                        .lineLimit(nil)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .padding(.top, 8)
+                                        .padding(.horizontal, 4)
+                                        .padding(.bottom, 16)
+                                        .id(topicSummaryScrollId)
+                                }
                             }
                         }
                     }
                 }
-
-                if !result.summary.whyItMatters.isEmpty {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Why it matters")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(.secondary)
-                        Text(result.summary.whyItMatters)
-                            .font(.subheadline)
-                    }
-                }
-
-                if !result.topics.isEmpty {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Explore")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(.secondary)
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 8)], spacing: 8) {
-                            ForEach(Array(result.topics.enumerated()), id: \.offset) { _, topic in
-                                Button {
-                                    onTopicTap?(topic)
-                                    onTelemetry?(.topicChipTaps)
-                                } label: {
-                                    Text(topic.title)
-                                        .font(.caption)
-                                        .lineLimit(2)
-                                        .multilineTextAlignment(.center)
-                                        .padding(.horizontal, 12)
-                                        .padding(.vertical, 8)
-                                        .frame(maxWidth: .infinity, alignment: .center)
-                                        .background(Color.accentColor.opacity(0.15))
-                                        .clipShape(Capsule())
-                                }
-                                .buttonStyle(.plain)
-                            }
+                .padding()
+                .padding(.bottom, 48)
+            }
+            .scrollDismissesKeyboard(.automatic)
+            .onChange(of: selectedTopicIndex) { newValue in
+                if newValue != nil {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            proxy.scrollTo(topicSummaryScrollId, anchor: .center)
                         }
                     }
                 }
             }
-            .padding()
         }
     }
 }

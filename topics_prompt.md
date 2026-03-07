@@ -57,6 +57,32 @@ Reject topics that are:
 - Keep wording neutral and factual.
 - Prefer concrete wording over abstract phrasing.
 
+## Accuracy Standard
+- Use only facts explicitly stated in the article or directly supported by it.
+- If the article is missing detail, omit the detail instead of guessing.
+- Preserve important names, numbers, dates, and timeline details exactly.
+- Do not use loaded adjectives like "dramatic", "shocking", "unprecedented", or "massive" unless the article itself uses that exact word. Prefer neutral phrasing.
+- For breaking or incomplete stories, use conservative wording and prefer "the article does not yet say" over speculation.
+- If the article text is very short or appears truncated (fewer than 3 sentences), base all output strictly on the available text. Do not pad with generic content.
+
+## Topic Summary Standard
+- Each topic must include a `summary` of at least 2 sentences and no more than 3.
+- The summary must describe what the topic covers in the context of the article, including key details, people involved, or why it matters.
+- Do not repeat the topic title in the summary.
+- Do not add facts beyond the article.
+
+## Negative Example (Do Not Produce)
+```json
+{
+  "oneLiner": "A dramatic and unprecedented event shook the nation.",
+  "bullets": ["Something big happened.", "Something big happened.", "More details emerged."],
+  "topics": [
+    { "title": "Learn more", "prompt": "Tell me more.", "summary": "This is interesting." }
+  ]
+}
+```
+Problems: loaded adjectives, repeated bullets, filler title, vague prompt, one-sentence generic summary.
+
 ## Recommended Generation Prompt
 
 ```text
@@ -70,14 +96,19 @@ Rules:
 - No generic or reusable filler topics.
 - Titles: 2 to 5 words, concise, distinct, product-ready.
 - Prompts: one sentence, specific to the article, and useful for follow-up analysis.
+- If an angle is weakly supported, skip it instead of stretching the article.
 - Cover varied angles where supported by the article, such as what happened, what happens next, key players, uncertainties, timeline, or impact.
 - Do not repeat the same angle with minor wording changes.
 - If the article is narrow, choose fewer angles but still return 5 strong topics by varying perspective carefully.
 ```
 
-## Current Bottlenecks In Existing Prompt
-- It lists example angles but does not require uniqueness.
-- It does not define what makes a bad topic.
-- It does not constrain title length strongly enough.
-- It does not force article-grounded prompts.
-- It does not prevent generic filler topics.
+## Current Bottlenecks In Existing Prompt — ALL ADDRESSED
+- ~~It lists example angles but does not require uniqueness.~~ ✅ Uniqueness enforced by dedup + prompt rule.
+- ~~It does not define what makes a bad topic.~~ ✅ Negative example added to prompt and docs.
+- ~~It does not constrain title length strongly enough.~~ ✅ Hard 2-5 word, 32-char cap.
+- ~~It does not force article-grounded prompts.~~ ✅ Grounding keywords required.
+- ~~It does not prevent generic filler topics.~~ ✅ Filler blocklist + score threshold.
+- ~~No loaded adjectives ban.~~ ✅ Explicit rule forbids loaded adjectives unless article uses them.
+- ~~No topic summary minimum length.~~ ✅ "At least 2 sentences" enforced in prompt rule.
+- ~~No truncated/short article handling.~~ ✅ Explicit rule for articles with fewer than 3 sentences.
+- ~~No inline negative example.~~ ✅ BAD output example added to prompt.
