@@ -32,8 +32,8 @@ struct ConversationEngineTests {
         let engine = ConversationEngine(aiClient: MockAICompleter(response: json))
         let result = try await engine.generate(article: .init(title: "Merger review delayed", text: "Article body"))
 
-        let firstTopic = try #require(result.topics.first)
-        let parsedSummary = try #require(firstTopic.summary)
+        let matchedTopic = try #require(result.topics.first(where: { $0.title == "What happens next" }))
+        let parsedSummary = try #require(matchedTopic.summary)
 
         #expect(parsedSummary == summary)
         #expect(parsedSummary.count > 100)

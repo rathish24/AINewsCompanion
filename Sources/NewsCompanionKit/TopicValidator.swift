@@ -6,18 +6,12 @@ public struct TopicValidatorConfig: Codable, Sendable {
     let fillerPhrases: [String]
     let fillerTitles: [String]
     let angles: [AngleEntry]
-    let fallbackTemplates: [FallbackEntry]
+    let anglePriority: [String]?
     let validation: ValidationRules
 
     struct AngleEntry: Codable, Sendable {
         let name: String
         let keywords: [String]
-    }
-
-    struct FallbackEntry: Codable, Sendable {
-        let title: String
-        let prompt: String
-        let angle: String
     }
 
     struct ValidationRules: Codable, Sendable {
@@ -26,7 +20,6 @@ public struct TopicValidatorConfig: Codable, Sendable {
         let maxTitleChars: Int
         let minPromptWords: Int
         let minScore: Int
-        let minTopics: Int
         let maxTopics: Int
         let minPromptWordsForClarity: Int
         let groundingKeywords: [String]
@@ -36,7 +29,7 @@ public struct TopicValidatorConfig: Codable, Sendable {
 
 // MARK: - Topic Validator
 
-/// Deterministic post-parse validation, semantic dedup, scoring, and fallback for topic chips.
+/// Deterministic post-parse validation, semantic dedup, scoring, and ordering for topic chips.
 /// All rules are driven by `TopicValidatorConfig` (bundled JSON or future API payload).
 enum TopicValidator {
 
@@ -73,7 +66,8 @@ enum TopicValidator {
 
     // MARK: - Public pipeline
 
-    /// Full pipeline: validate → dedupe → score → fallback → return best topics.
+    /// Full pipeline: validate → dedupe → score → order → return topics (no fallback fill).
+    /// When the AI returns fewer than 5 valid topics, we return only those; we do not fill with fallback templates.
     /// Pass a custom `config` to override the bundled JSON (e.g. from an API).
     static func process(
         raw: [TopicChip],
@@ -90,12 +84,10 @@ enum TopicValidator {
         validated = deduplicateByAngle(validated)
         validated.sort { $0.score > $1.score }
 
-        if validated.count < cfg.validation.minTopics {
-            let fallbacks = buildFallbacks(existing: validated, cfg: cfg)
-            validated.append(contentsOf: fallbacks)
-        }
+        var final = Array(validated.prefix(cfg.validation.maxTopics))
+        final = orderByPriority(final, cfg: cfg)
 
-        return Array(validated.prefix(cfg.validation.maxTopics)).map(\.chip)
+        return final.map(\.chip)
     }
 
     // MARK: - Single topic validation
@@ -167,6 +159,23 @@ enum TopicValidator {
         return result
     }
 
+    // MARK: - Priority ordering
+
+    private static func orderByPriority(
+        _ topics: [ValidatedTopic],
+        cfg: TopicValidatorConfig
+    ) -> [ValidatedTopic] {
+        guard let priority = cfg.anglePriority, !priority.isEmpty else { return topics }
+        let lookup = Dictionary(uniqueKeysWithValues: priority.enumerated().map { ($1, $0) })
+        let fallback = priority.count
+        return topics.sorted { a, b in
+            let pa = lookup[a.angle.rawValue] ?? fallback
+            let pb = lookup[b.angle.rawValue] ?? fallback
+            if pa != pb { return pa < pb }
+            return a.score > b.score
+        }
+    }
+
     // MARK: - Deterministic scoring
 
     private static func computeScore(
@@ -195,24 +204,4 @@ enum TopicValidator {
         return score
     }
 
-    // MARK: - Fallback topics
-
-    private static func buildFallbacks(
-        existing: [ValidatedTopic],
-        cfg: TopicValidatorConfig
-    ) -> [ValidatedTopic] {
-        let usedAngles = Set(existing.map(\.angle.rawValue))
-        let needed = max(0, cfg.validation.minTopics - existing.count)
-        var fallbacks: [ValidatedTopic] = []
-
-        for template in cfg.fallbackTemplates {
-            guard fallbacks.count < needed else { break }
-            guard !usedAngles.contains(template.angle) else { continue }
-            let angle = TopicAngle(rawValue: template.angle) ?? .other
-            let chip = TopicChip(title: template.title, prompt: template.prompt)
-            let score = computeScore(title: chip.title, prompt: chip.prompt, angle: angle, cfg: cfg)
-            fallbacks.append(ValidatedTopic(chip: chip, angle: angle, score: score))
-        }
-        return fallbacks
-    }
 }

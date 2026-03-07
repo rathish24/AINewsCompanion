@@ -5,15 +5,15 @@ import Testing
 @Suite("Topic Validator Tests")
 struct TopicValidatorTests {
 
-    @Test("Validator returns 5-6 product-ready topics across article categories", arguments: ArticleFixture.allCases)
+    @Test("Validator returns up to 5 product-ready topics across article categories", arguments: ArticleFixture.allCases)
     func validatorProducesStrongTopicSets(for fixture: ArticleFixture) {
         let output = TopicValidator.process(
             raw: fixture.rawTopics,
             articleTitle: fixture.articleTitle
         )
 
-        #expect(output.count >= 5)
-        #expect(output.count <= 6)
+        #expect(output.count >= 1)
+        #expect(output.count <= 5)
 
         let lowerTitles = output.map { $0.title.lowercased() }
         #expect(!lowerTitles.contains("deep dive"))
@@ -43,17 +43,39 @@ struct TopicValidatorTests {
         #expect(nextLikeTitles.count == 1)
     }
 
-    @Test("Fallback fills missing topics up to minimum count")
-    func fallbackBuilderFillsMissingTopics() {
+    @Test("Output is ordered by angle priority: recap before next before players")
+    func outputRespectsAnglePriority() {
+        let rawTopics = [
+            topic("Key players", "Who are the main people or organizations mentioned in the article and what are their roles?"),
+            topic("What happens next", "Based on the article, what are the most likely next developments after the ruling?"),
+            topic("What happened", "Based on the article, what are the key events that occurred and led to this outcome?"),
+            topic("Why it matters", "Based on the article, why does this story matter to readers and policymakers?"),
+            topic("Biggest unknowns", "What important questions remain unanswered based on the article and official statements?")
+        ]
+
+        let output = TopicValidator.process(raw: rawTopics, articleTitle: "Test ordering")
+
+        #expect(output.count == 5)
+        let titles = output.map { $0.title.lowercased() }
+        if let recapIdx = titles.firstIndex(where: { $0.contains("what happened") }),
+           let nextIdx = titles.firstIndex(where: { $0.contains("what happens next") }),
+           let playersIdx = titles.firstIndex(where: { $0.contains("key players") }) {
+            #expect(recapIdx < nextIdx)
+            #expect(nextIdx < playersIdx)
+        }
+    }
+
+    @Test("When fewer than 5 valid topics, validator returns only those (no fallback fill)")
+    func noFallbackWhenFewValidTopics() {
         let rawTopics = [
             topic("What happened", "Based on the article, what are the key events that occurred and why did they escalate?"),
             topic("Key players", "Who are the main people or organizations mentioned in the article and what are their roles?"),
             topic("Why it matters", "Based on the article, why does this story matter to everyday people and policymakers?")
         ]
 
-        let output = TopicValidator.process(raw: rawTopics, articleTitle: "Fallback article")
+        let output = TopicValidator.process(raw: rawTopics, articleTitle: "Short article")
 
-        #expect(output.count == 5)
+        #expect(output.count == 3)
     }
 
     private static func topic(_ title: String, _ prompt: String) -> TopicChip {

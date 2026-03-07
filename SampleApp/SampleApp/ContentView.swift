@@ -2,13 +2,42 @@ import SwiftUI
 import SwiftData
 import NewsCompanionKit
 
+// MARK: - Sky News article list (one per category: Home, World, Sports)
+
+struct SkyArticle: Identifiable {
+    let id: String
+    let category: String
+    let title: String
+    let url: URL
+}
+
+private let skyArticleList: [SkyArticle] = [
+    SkyArticle(
+        id: "home-1",
+        category: "Home",
+        title: "War us and israles",
+        url: URL(string: "https://news.sky.com/story/iran-war-the-strategy-behind-the-us-and-israels-strikes-13516343")!
+    ),
+    SkyArticle(
+        id: "world-1",
+        category: "World",
+        title: "Is Britain really off the booze for good?",
+        url: URL(string: "https://news.sky.com/story/money-live-tips-personal-finance-consumer-sky-news-latest-13040934")!
+    ),
+    SkyArticle(
+        id: "sports-1",
+        category: "Sports",
+        title: "Australian GP Qualifying: Lando Norris claims pole, Hamilton eighth on Ferrari debut",
+        url: URL(string: "https://www.skysports.com/f1/news/12433/13328870/australian-gp-qualifying-lando-norris-claims-pole-position-with-lewis-hamilton-only-eighth-on-ferrari-debut")!
+    )
+]
+
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     @State private var companionURL: URL?
     @State private var showKeyEntry = false
     @State private var selectedProvider: AIProvider = Self.savedProvider()
 
-    private static let sampleArticleURL = URL(string: "https://news.sky.com/story/two-children-among-seven-dead-in-russian-missile-strikes-in-ukraine-13516381")!
     private static let providerKey = "NewsCompanionSelectedProvider"
 
     private static let providerBundleKeys: [AIProvider: String] = [
@@ -57,19 +86,13 @@ struct ContentView: View {
     }
 
     var body: some View {
-        VStack(spacing: 24) {
+        VStack(spacing: 0) {
             Text("News Companion")
                 .font(.title2)
                 .fontWeight(.semibold)
+                .padding(.top, 12)
 
-            if effectiveAPIKey != nil {
-                Button(action: openCompanion) {
-                    Label("AI Companion", systemImage: "sparkles")
-                        .font(.headline)
-                        .padding()
-                }
-                .buttonStyle(.borderedProminent)
-            } else {
+            if effectiveAPIKey == nil {
                 Text("Set your API key to use the AI companion.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -77,6 +100,7 @@ struct ContentView: View {
                     .padding(.horizontal)
                 Button("Set API key", action: { showKeyEntry = true })
                     .buttonStyle(.borderedProminent)
+                    .padding(.top, 8)
             }
 
             Picker("AI Provider", selection: Binding(get: { selectedProvider }, set: { saveProvider($0) })) {
@@ -86,17 +110,45 @@ struct ContentView: View {
             }
             .pickerStyle(.segmented)
             .padding(.horizontal, 24)
+            .padding(.vertical, 12)
 
-            Button("Change or clear API key", action: { showKeyEntry = true })
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            List(skyArticleList) { article in
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(article.category)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text(article.title)
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
-            Toggle(isOn: Binding(get: { CompanionDebug.isEnabled }, set: { CompanionDebug.isEnabled = $0 })) {
-                Text("Debug logging (cache / API)")
-                    .font(.caption)
+                    Button {
+                        companionURL = article.url
+                    } label: {
+                        Image(systemName: "sparkles")
+                            .font(.body)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(effectiveAPIKey == nil)
+                }
+                .padding(.vertical, 4)
             }
-            .toggleStyle(.switch)
-            .padding(.horizontal, 40)
+            .listStyle(.insetGrouped)
+
+            HStack(spacing: 16) {
+                Button("Change or clear API key", action: { showKeyEntry = true })
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Toggle(isOn: Binding(get: { CompanionDebug.isEnabled }, set: { CompanionDebug.isEnabled = $0 })) {
+                    Text("Debug")
+                        .font(.caption)
+                }
+                .toggleStyle(.switch)
+            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 12)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .sheet(isPresented: $showKeyEntry) {
@@ -147,10 +199,6 @@ struct ContentView: View {
             }
         }
         .onAppear { }
-    }
-
-    private func openCompanion() {
-        companionURL = Self.sampleArticleURL
     }
 }
 

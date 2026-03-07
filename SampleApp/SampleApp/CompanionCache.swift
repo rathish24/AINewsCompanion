@@ -21,7 +21,7 @@ final class CachedCompanionResult {
 
 enum CompanionCache {
     /// Bump this whenever the prompt or output contract changes so stale cache is ignored.
-    static let promptVersion = 3
+    static let promptVersion = 5
     static let cacheValidityDuration: TimeInterval = 24 * 60 * 60
 
     static func cachedResult(for url: URL, modelContext: ModelContext) -> CompanionResult? {

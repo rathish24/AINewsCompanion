@@ -148,7 +148,7 @@ private struct AIResponse: Decodable {
             return TopicChip(title: title, prompt: prompt, summary: summary)
         }
 
-        // Full pipeline: validate → semantic dedupe → score → fallback → best 5-6
+        // Full pipeline: validate → angle dedupe → score → order → return up to 5 valid topics
         let validatedTopics = TopicValidator.process(raw: rawChips, articleTitle: oneLiner, config: config)
 
         let factChecksModel = (factChecks ?? []).compactMap { f -> FactCheck? in

@@ -14,9 +14,10 @@
     "background"
   ],
   "fillerTitles": [
-    "more context",
-    "deep dive",
     "learn more",
+    "deep dive",
+    "more context",
+    "tell me more",
     "overview",
     "what this means",
     "additional info",
@@ -25,23 +26,23 @@
   "angles": [
     {
       "name": "recap",
-      "keywords": ["what happened", "in brief", "recap", "in 30 seconds", "summary so far"]
-    },
-    {
-      "name": "next",
-      "keywords": ["what happens next", "next steps", "what comes next", "looking ahead", "what's next"]
-    },
-    {
-      "name": "players",
-      "keywords": ["key players", "main actors", "who matters", "who is involved", "key people", "key figures"]
+      "keywords": ["what happened", "what we know", "in brief", "recap", "in 30 seconds", "summary so far"]
     },
     {
       "name": "impact",
-      "keywords": ["why it matters", "why this matters", "impact", "implications", "how this affects", "what it means"]
+      "keywords": ["why it matters", "why this matters", "impact", "implications", "how this affects", "what it means", "who is affected"]
+    },
+    {
+      "name": "next",
+      "keywords": ["what happens next", "next steps", "next steps mentioned", "what comes next", "looking ahead", "what's next"]
+    },
+    {
+      "name": "players",
+      "keywords": ["key players", "key players named", "who is named", "main actors", "who matters", "who is involved", "key people", "key figures"]
     },
     {
       "name": "uncertainty",
-      "keywords": ["biggest unknowns", "open questions", "uncertainties", "unanswered", "risks", "unknown"]
+      "keywords": ["biggest unknowns", "what is unclear", "questions raised", "open questions", "uncertainties", "unanswered", "risks", "unknown"]
     },
     {
       "name": "timeline",
@@ -49,53 +50,21 @@
     },
     {
       "name": "debate",
-      "keywords": ["for vs against", "both sides", "arguments", "competing views", "debate", "pros and cons"]
+      "keywords": ["for vs against", "both sides", "arguments", "competing views", "competing arguments", "debate", "pros and cons"]
     },
     {
       "name": "watchlist",
       "keywords": ["what to watch", "what to monitor", "watch next", "keep an eye on", "signals"]
     }
   ],
-  "fallbackTemplates": [
-    {
-      "title": "What happened",
-      "prompt": "Based on the article, what are the key events that occurred?",
-      "angle": "recap"
-    },
-    {
-      "title": "What happens next",
-      "prompt": "Based on the article, what are the most likely next developments?",
-      "angle": "next"
-    },
-    {
-      "title": "Key players",
-      "prompt": "Who are the main people or organizations mentioned in the article and what are their roles?",
-      "angle": "players"
-    },
-    {
-      "title": "Why it matters",
-      "prompt": "Based on the article, why does this story matter to everyday people?",
-      "angle": "impact"
-    },
-    {
-      "title": "Biggest unknowns",
-      "prompt": "What important questions remain unanswered based on the article?",
-      "angle": "uncertainty"
-    },
-    {
-      "title": "What to watch",
-      "prompt": "Based on the article, what developments should readers monitor going forward?",
-      "angle": "watchlist"
-    }
-  ],
+  "anglePriority": ["recap", "impact", "next", "players", "uncertainty", "timeline", "debate", "watchlist", "other"],
   "validation": {
     "minTitleWords": 2,
     "maxTitleWords": 5,
     "maxTitleChars": 32,
     "minPromptWords": 6,
     "minScore": 7,
-    "minTopics": 5,
-    "maxTopics": 6,
+    "maxTopics": 5,
     "minPromptWordsForClarity": 10,
     "groundingKeywords": ["article", "based on"],
     "fillerTitleWords": ["more", "general", "other"]
