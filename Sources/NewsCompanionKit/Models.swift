@@ -16,7 +16,7 @@ public struct ArticleContent: Sendable {
 
 // MARK: - Summary
 
-public struct Summary: Sendable {
+public struct Summary: Sendable, Codable {
     public let oneLiner: String
     public let bullets: [String]
     public let whyItMatters: String
@@ -30,7 +30,7 @@ public struct Summary: Sendable {
 
 // MARK: - TopicChip
 
-public struct TopicChip: Sendable {
+public struct TopicChip: Sendable, Codable {
     public let title: String
     public let prompt: String
 
@@ -42,7 +42,7 @@ public struct TopicChip: Sendable {
 
 // MARK: - FactCheck
 
-public struct FactCheck: Sendable {
+public struct FactCheck: Sendable, Codable {
     public let claim: String
     public let whatToVerify: String
 
@@ -54,7 +54,7 @@ public struct FactCheck: Sendable {
 
 // MARK: - CompanionResult
 
-public struct CompanionResult: Sendable {
+public struct CompanionResult: Sendable, Codable {
     public let summary: Summary
     public let topics: [TopicChip]
     public let factChecks: [FactCheck]

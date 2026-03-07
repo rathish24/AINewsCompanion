@@ -1,7 +1,9 @@
 import SwiftUI
+import SwiftData
 import NewsCompanionKit
 
 struct ContentView: View {
+    @Environment(\.modelContext) private var modelContext
     @State private var companionURL: URL?
     /// Effective key: from ApiKeys.xcconfig (Bundle) first, then Keychain. Refreshed on appear and after saving.
     @State private var effectiveAPIKey: String? = Self.resolveAPIKey()
@@ -22,7 +24,11 @@ struct ContentView: View {
 
     private var companionConfig: NewsCompanionKit.Config? {
         guard let key = effectiveAPIKey else { return nil }
-        return NewsCompanionKit.Config(apiKey: key)
+        var config = NewsCompanionKit.Config(apiKey: key)
+        if CompanionDebug.isEnabled {
+            config.debugLog = { CompanionDebug.log($0) }
+        }
+        return config
     }
 
     var body: some View {
@@ -51,6 +57,13 @@ struct ContentView: View {
             Button("Change or clear API key", action: { showKeyEntry = true })
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
+            Toggle(isOn: Binding(get: { CompanionDebug.isEnabled }, set: { CompanionDebug.isEnabled = $0 })) {
+                Text("Debug logging (cache / API)")
+                    .font(.caption)
+            }
+            .toggleStyle(.switch)
+            .padding(.horizontal, 40)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .sheet(isPresented: $showKeyEntry) {
@@ -73,9 +86,29 @@ struct ContentView: View {
             set: { companionURL = $0?.url }
         )) { identifiable in
             if let config = companionConfig {
-                CompanionSheetView(url: identifiable.url, config: config) {
-                    companionURL = nil
-                }
+                CompanionSheetView(
+                    url: identifiable.url,
+                    config: config,
+                    generateCompanion: { url in
+                        // New or dynamic URL: first time → API then SwiftData; same URL later → SwiftData only
+                        if let cached = CompanionCache.cachedResult(for: url, modelContext: modelContext) {
+                            CompanionDebug.logCacheHit(url: url)
+                            return cached
+                        }
+                        CompanionDebug.logCacheMiss(url: url)
+                        do {
+                            let result = try await NewsCompanionKit.generate(url: url, config: config)
+                            try CompanionCache.save(result: result, for: url, modelContext: modelContext)
+                            let prefix = String(result.summary.oneLiner.prefix(50))
+                            CompanionDebug.logAPISuccess(url: url, oneLinerPrefix: prefix)
+                            return result
+                        } catch {
+                            CompanionDebug.logAPIFailure(url: url, error: error)
+                            throw error
+                        }
+                    },
+                    onDismiss: { companionURL = nil }
+                )
                 .modifier(PresentationDetentsWhenAvailable())
             } else {
                 MissingKeySheetView(onDismiss: { companionURL = nil }, onSetKey: { companionURL = nil; showKeyEntry = true })

@@ -11,6 +11,8 @@ public struct CompanionSheetView: View {
 
     private let url: URL
     private let config: NewsCompanionKit.Config
+    /// When provided, used instead of calling the API directly (e.g. cache-first fetch). If nil, uses `NewsCompanionKit.generate(url:config:)`.
+    private let generateCompanion: ((URL) async throws -> CompanionResult)?
     private let onDismiss: (() -> Void)?
     private let onTopicTap: ((TopicChip) -> Void)?
     private let onTelemetry: ((TelemetryEvent) -> Void)?
@@ -22,12 +24,14 @@ public struct CompanionSheetView: View {
     public init(
         url: URL,
         config: NewsCompanionKit.Config,
+        generateCompanion: ((URL) async throws -> CompanionResult)? = nil,
         onDismiss: (() -> Void)? = nil,
         onTopicTap: ((TopicChip) -> Void)? = nil,
         onTelemetry: ((TelemetryEvent) -> Void)? = nil
     ) {
         self.url = url
         self.config = config
+        self.generateCompanion = generateCompanion
         self.onDismiss = onDismiss
         self.onTopicTap = onTopicTap
         self.onTelemetry = onTelemetry
@@ -116,7 +120,12 @@ public struct CompanionSheetView: View {
         startTime = Date()
         onTelemetry?(.aiIconClicks)
         do {
-            let result = try await NewsCompanionKit.generate(url: url, config: config)
+            let result: CompanionResult
+            if let fetch = generateCompanion {
+                result = try await fetch(url)
+            } else {
+                result = try await NewsCompanionKit.generate(url: url, config: config)
+            }
             if let start = startTime {
                 onTelemetry?(.timeToSummary(seconds: Date().timeIntervalSince(start)))
             }
