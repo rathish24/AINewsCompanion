@@ -4,12 +4,11 @@ import PackageDescription
 let package = Package(
     name: "AINewsCompanion",
     platforms: [
-        .iOS(.v15),
+        .iOS(.v17),
         .macOS(.v13)
     ],
     products: [
         .library(name: "NewsCompanionKit", targets: ["NewsCompanionKit"]),
-        .library(name: "ArticleBottomSheet", targets: ["ArticleBottomSheet"]),
     ],
     dependencies: [
         .package(url: "https://github.com/scinfu/SwiftSoup.git", from: "2.6.0"),
@@ -19,11 +18,6 @@ let package = Package(
             name: "NewsCompanionKit",
             dependencies: ["SwiftSoup"],
             path: "Sources/NewsCompanionKit"
-        ),
-        .target(
-            name: "ArticleBottomSheet",
-            dependencies: ["SwiftSoup"],
-            path: "Sources/ArticleBottomSheet"
-        ),
+        )
     ]
 )
