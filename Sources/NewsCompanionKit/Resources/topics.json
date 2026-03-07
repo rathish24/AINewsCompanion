@@ -1,0 +1,103 @@
+{
+  "fillerPhrases": [
+    "learn more",
+    "deep dive",
+    "more context",
+    "tell me more",
+    "explore this topic",
+    "read more",
+    "find out more",
+    "additional details",
+    "further reading",
+    "get the details",
+    "overview",
+    "background"
+  ],
+  "fillerTitles": [
+    "more context",
+    "deep dive",
+    "learn more",
+    "overview",
+    "what this means",
+    "additional info",
+    "further details"
+  ],
+  "angles": [
+    {
+      "name": "recap",
+      "keywords": ["what happened", "in brief", "recap", "in 30 seconds", "summary so far"]
+    },
+    {
+      "name": "next",
+      "keywords": ["what happens next", "next steps", "what comes next", "looking ahead", "what's next"]
+    },
+    {
+      "name": "players",
+      "keywords": ["key players", "main actors", "who matters", "who is involved", "key people", "key figures"]
+    },
+    {
+      "name": "impact",
+      "keywords": ["why it matters", "why this matters", "impact", "implications", "how this affects", "what it means"]
+    },
+    {
+      "name": "uncertainty",
+      "keywords": ["biggest unknowns", "open questions", "uncertainties", "unanswered", "risks", "unknown"]
+    },
+    {
+      "name": "timeline",
+      "keywords": ["timeline", "what changed", "so far", "sequence of events", "chronology", "history"]
+    },
+    {
+      "name": "debate",
+      "keywords": ["for vs against", "both sides", "arguments", "competing views", "debate", "pros and cons"]
+    },
+    {
+      "name": "watchlist",
+      "keywords": ["what to watch", "what to monitor", "watch next", "keep an eye on", "signals"]
+    }
+  ],
+  "fallbackTemplates": [
+    {
+      "title": "What happened",
+      "prompt": "Based on the article, what are the key events that occurred?",
+      "angle": "recap"
+    },
+    {
+      "title": "What happens next",
+      "prompt": "Based on the article, what are the most likely next developments?",
+      "angle": "next"
+    },
+    {
+      "title": "Key players",
+      "prompt": "Who are the main people or organizations mentioned in the article and what are their roles?",
+      "angle": "players"
+    },
+    {
+      "title": "Why it matters",
+      "prompt": "Based on the article, why does this story matter to everyday people?",
+      "angle": "impact"
+    },
+    {
+      "title": "Biggest unknowns",
+      "prompt": "What important questions remain unanswered based on the article?",
+      "angle": "uncertainty"
+    },
+    {
+      "title": "What to watch",
+      "prompt": "Based on the article, what developments should readers monitor going forward?",
+      "angle": "watchlist"
+    }
+  ],
+  "validation": {
+    "minTitleWords": 2,
+    "maxTitleWords": 5,
+    "maxTitleChars": 32,
+    "minPromptWords": 6,
+    "minScore": 7,
+    "minTopics": 5,
+    "maxTopics": 6,
+    "minPromptWordsForClarity": 10,
+    "groundingKeywords": ["article", "based on"],
+    "fillerTitleWords": ["more", "general", "other"]
+  }
+}

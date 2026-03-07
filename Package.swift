@@ -17,7 +17,8 @@ let package = Package(
         .target(
             name: "NewsCompanionKit",
             dependencies: ["SwiftSoup"],
-            path: "Sources/NewsCompanionKit"
+            path: "Sources/NewsCompanionKit",
+            resources: [.process("Resources")]
         )
     ]
 )

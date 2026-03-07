@@ -1,70 +1,92 @@
 import Foundation
 
+// MARK: - Conversation prompt config (decoded from conversation.json or future API)
+
+public struct ConversationPromptConfig: Codable, Sendable {
+    let intro: String
+    let jsonStructure: String
+    let rules: [String]
+    let articleTitleLabel: String
+    let articleTextLabel: String
+    let retrySuffix: String
+
+    static func loadBundled() -> ConversationPromptConfig {
+        guard let url = Bundle.module.url(forResource: "conversation", withExtension: "json"),
+              let data = try? Data(contentsOf: url),
+              let config = try? JSONDecoder().decode(ConversationPromptConfig.self, from: data) else {
+            fatalError("conversation.json missing or invalid in NewsCompanionKit bundle")
+        }
+        return config
+    }
+
+    static func config(from jsonData: Data) throws -> ConversationPromptConfig {
+        try JSONDecoder().decode(ConversationPromptConfig.self, from: jsonData)
+    }
+}
+
+// MARK: - Conversation Engine
+
 /// Converts article content into structured companion insights via the AI client.
+/// Prompt rules come from conversation.json; topic validation from topics.json (single responsibility).
 public final class ConversationEngine: Sendable {
 
     private let aiClient: any AICompleting
     private let maxArticleChars: Int
+    private let promptConfig: ConversationPromptConfig?
+    private let topicConfig: TopicValidatorConfig?
 
-    public init(aiClient: any AICompleting, maxArticleChars: Int = 12_000) {
+    public init(
+        aiClient: any AICompleting,
+        maxArticleChars: Int = 12_000,
+        promptConfig: ConversationPromptConfig? = nil,
+        topicConfig: TopicValidatorConfig? = nil
+    ) {
         self.aiClient = aiClient
         self.maxArticleChars = maxArticleChars
+        self.promptConfig = promptConfig
+        self.topicConfig = topicConfig
     }
 
     public func generate(article: ArticleContent) async throws -> CompanionResult {
         let trimmedText = String(article.text.prefix(maxArticleChars))
-        let prompt = buildPrompt(title: article.title, text: trimmedText)
+        let effectivePromptConfig = promptConfig ?? ConversationPromptConfig.loadBundled()
+        let effectiveTopicConfig = topicConfig ?? TopicValidator.loadBundledConfig()
+        let prompt = buildPrompt(title: article.title, text: trimmedText, config: effectivePromptConfig)
         var raw: String
         do {
             raw = try await aiClient.complete(prompt: prompt)
         } catch {
             throw ConversationEngineError.aiFailed(error)
         }
-        if let result = parseResponse(raw) { return result }
-        // Retry once with stricter instruction
-        let retryPrompt = prompt + "\n\nImportant: Return valid JSON only, no markdown or extra text."
+        if let result = parseResponse(raw, config: effectiveTopicConfig) { return result }
+        let retryPrompt = prompt + "\n\n" + effectivePromptConfig.retrySuffix
         do {
             raw = try await aiClient.complete(prompt: retryPrompt)
         } catch {
             throw ConversationEngineError.aiFailed(error)
         }
-        if let result = parseResponse(raw) { return result }
+        if let result = parseResponse(raw, config: effectiveTopicConfig) { return result }
         throw ConversationEngineError.invalidJSON
     }
 
-    private func buildPrompt(title: String, text: String) -> String {
-        """
-        You are a news companion. Based on the following article, return a single JSON object with this exact structure. Use only the keys below. No markdown, no code fence.
+    private func buildPrompt(title: String, text: String, config: ConversationPromptConfig) -> String {
+        let rulesBlock = config.rules.map { "- \($0)" }.joined(separator: "\n")
+        return """
+        \(config.intro)
 
-        {
-          "summary": {
-            "oneLiner": "One sentence summary",
-            "bullets": ["Bullet 1", "Bullet 2", "Bullet 3"],
-            "whyItMatters": "One short paragraph on why this story matters"
-          },
-          "topics": [
-            { "title": "Short topic label", "prompt": "Question or instruction for follow-up" }
-          ],
-          "factChecks": [
-            { "claim": "A specific claim from the article", "whatToVerify": "How to verify it" }
-          ]
-        }
+        \(config.jsonStructure)
 
         Rules:
-        - summary.oneLiner: one clear sentence.
-        - summary.bullets: 3 to 5 short bullet points.
-        - summary.whyItMatters: 2-4 sentences max.
-        - topics: 5 to 6 items. Use varied angles: what happens next, key players, why it matters to me, uncertainties, for vs against, timeline, what to watch.
-        - factChecks: 0 to 3 items. Only include if the article makes verifiable claims worth checking.
+        \(rulesBlock)
 
-        Article title: \(title)
+        \(config.articleTitleLabel) \(title)
 
-        Article text:
+        \(config.articleTextLabel)
         \(text)
         """
     }
 
-    private func parseResponse(_ raw: String) -> CompanionResult? {
+    private func parseResponse(_ raw: String, config: TopicValidatorConfig) -> CompanionResult? {
         var cleaned = raw
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: "```json", with: "")
@@ -77,7 +99,7 @@ public final class ConversationEngine: Sendable {
         }
         guard let data = cleaned.data(using: .utf8),
               let decoded = try? JSONDecoder().decode(AIResponse.self, from: data) else { return nil }
-        return decoded.toCompanionResult()
+        return decoded.toCompanionResult(config: config)
     }
 }
 
@@ -100,7 +122,7 @@ private struct AIResponse: Decodable {
         let whatToVerify: String?
     }
 
-    func toCompanionResult() -> CompanionResult {
+    func toCompanionResult(config: TopicValidatorConfig) -> CompanionResult {
         let s = summary ?? AIResponse.SummaryPart(oneLiner: nil, bullets: nil, whyItMatters: nil)
         let oneLiner = s.oneLiner?.trimmingCharacters(in: .whitespaces) ?? "No summary available."
         let bullets = (s.bullets ?? []).compactMap { b in
@@ -110,11 +132,21 @@ private struct AIResponse: Decodable {
         let whyItMatters = s.whyItMatters?.trimmingCharacters(in: .whitespaces) ?? ""
         let summaryModel = Summary(oneLiner: oneLiner, bullets: bullets, whyItMatters: whyItMatters)
 
-        let topicChips = (topics ?? []).compactMap { t -> TopicChip? in
-            guard let title = t.title?.trimmingCharacters(in: .whitespaces), !title.isEmpty,
-                  let prompt = t.prompt?.trimmingCharacters(in: .whitespaces), !prompt.isEmpty else { return nil }
+        // Parse raw chips, normalize whitespace, basic dedup
+        var seenTopicKeys = Set<String>()
+        let rawChips = (topics ?? []).compactMap { t -> TopicChip? in
+            guard let rawTitle = t.title?.trimmingCharacters(in: .whitespacesAndNewlines), !rawTitle.isEmpty,
+                  let rawPrompt = t.prompt?.trimmingCharacters(in: .whitespacesAndNewlines), !rawPrompt.isEmpty else { return nil }
+            let title = rawTitle.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            let prompt = rawPrompt.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            let dedupeKey = "\(title.lowercased())|\(prompt.lowercased())"
+            guard !seenTopicKeys.contains(dedupeKey) else { return nil }
+            seenTopicKeys.insert(dedupeKey)
             return TopicChip(title: title, prompt: prompt)
         }
+
+        // Full pipeline: validate → semantic dedupe → score → fallback → best 5-6
+        let validatedTopics = TopicValidator.process(raw: rawChips, articleTitle: oneLiner, config: config)
 
         let factChecksModel = (factChecks ?? []).compactMap { f -> FactCheck? in
             guard let claim = f.claim?.trimmingCharacters(in: .whitespaces), !claim.isEmpty,
@@ -122,7 +154,7 @@ private struct AIResponse: Decodable {
             return FactCheck(claim: claim, whatToVerify: what)
         }
 
-        return CompanionResult(summary: summaryModel, topics: Array(topicChips.prefix(6)), factChecks: factChecksModel)
+        return CompanionResult(summary: summaryModel, topics: validatedTopics, factChecks: factChecksModel)
     }
 }
 
