@@ -5,26 +5,51 @@ import NewsCompanionKit
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     @State private var companionURL: URL?
-    /// Effective key: from ApiKeys.xcconfig (Bundle) first, then Keychain. Refreshed on appear and after saving.
-    @State private var effectiveAPIKey: String? = Self.resolveAPIKey()
     @State private var showKeyEntry = false
+    @State private var selectedProvider: AIProvider = Self.savedProvider()
 
     private static let sampleArticleURL = URL(string: "https://news.sky.com/story/two-children-among-seven-dead-in-russian-missile-strikes-in-ukraine-13516381")!
-    private static let placeholderKey = "YOUR_GEMINI_API_KEY"
+    private static let providerKey = "NewsCompanionSelectedProvider"
 
-    /// Key from .xcconfig (Info.plist) or Keychain. Treats placeholder and empty as nil.
-    static func resolveAPIKey() -> String? {
-        let fromBundle = Bundle.main.object(forInfoDictionaryKey: "GEMINI_API_KEY") as? String
-        let fromKeychain = KeychainHelper.getAPIKey()
-        let raw = fromBundle?.trimmingCharacters(in: .whitespaces).nilIfEmpty
-            ?? fromKeychain?.trimmingCharacters(in: .whitespaces).nilIfEmpty
-        guard let key = raw, !key.isEmpty, key != placeholderKey else { return nil }
-        return key
+    private static let providerBundleKeys: [AIProvider: String] = [
+        .gemini: "GEMINI_API_KEY",
+        .claude: "CLAUDE_API_KEY",
+        .openAI: "OPENAI_API_KEY",
+        .groq: "GROQ_API_KEY",
+        .huggingFace: "HUGGINGFACE_API_KEY"
+    ]
+
+    static func resolveAPIKey(for provider: AIProvider) -> String? {
+        if let bundleKey = providerBundleKeys[provider],
+           let value = Bundle.main.object(forInfoDictionaryKey: bundleKey) as? String {
+            let trimmed = value.trimmingCharacters(in: .whitespaces)
+            if !trimmed.isEmpty, !trimmed.hasPrefix("YOUR_") { return trimmed }
+        }
+        if let fromKeychain = KeychainHelper.getAPIKey()?.trimmingCharacters(in: .whitespaces),
+           !fromKeychain.isEmpty {
+            return fromKeychain
+        }
+        return nil
+    }
+
+    private var effectiveAPIKey: String? {
+        Self.resolveAPIKey(for: selectedProvider)
+    }
+
+    private static func savedProvider() -> AIProvider {
+        guard let raw = UserDefaults.standard.string(forKey: providerKey),
+              let provider = AIProvider(rawValue: raw) else { return .groq }
+        return provider
+    }
+
+    private func saveProvider(_ provider: AIProvider) {
+        UserDefaults.standard.set(provider.rawValue, forKey: Self.providerKey)
+        selectedProvider = provider
     }
 
     private var companionConfig: NewsCompanionKit.Config? {
         guard let key = effectiveAPIKey else { return nil }
-        var config = NewsCompanionKit.Config(apiKey: key)
+        var config = NewsCompanionKit.Config(apiKey: key, provider: selectedProvider)
         if CompanionDebug.isEnabled {
             config.debugLog = { CompanionDebug.log($0) }
         }
@@ -45,7 +70,7 @@ struct ContentView: View {
                 }
                 .buttonStyle(.borderedProminent)
             } else {
-                Text("Set your Gemini API key in ApiKeys.xcconfig (or here) to use the AI companion.")
+                Text("Set your API key to use the AI companion.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -53,6 +78,14 @@ struct ContentView: View {
                 Button("Set API key", action: { showKeyEntry = true })
                     .buttonStyle(.borderedProminent)
             }
+
+            Picker("AI Provider", selection: Binding(get: { selectedProvider }, set: { saveProvider($0) })) {
+                ForEach(AIProvider.allCases, id: \.self) { provider in
+                    Text(provider.displayName).tag(provider)
+                }
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal, 24)
 
             Button("Change or clear API key", action: { showKeyEntry = true })
                 .font(.caption)
@@ -72,9 +105,8 @@ struct ContentView: View {
                 onSave: { key in
                     if key.isEmpty {
                         KeychainHelper.deleteAPIKey()
-                        effectiveAPIKey = nil
-                    } else if KeychainHelper.setAPIKey(key) {
-                        effectiveAPIKey = key
+                    } else {
+                        _ = KeychainHelper.setAPIKey(key)
                     }
                     showKeyEntry = false
                 },
@@ -114,7 +146,7 @@ struct ContentView: View {
                 MissingKeySheetView(onDismiss: { companionURL = nil }, onSetKey: { companionURL = nil; showKeyEntry = true })
             }
         }
-        .onAppear { effectiveAPIKey = Self.resolveAPIKey() }
+        .onAppear { }
     }
 
     private func openCompanion() {
@@ -170,11 +202,11 @@ struct APIKeyEntryView: View {
     var body: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 16) {
-                Text("Your Gemini API key is stored only in the device Keychain. It is never saved in the app code or in files.")
+                Text("Your API key is stored only in the device Keychain. It is never saved in the app code or in files.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
 
-                SecureField("Gemini API key", text: $keyInput)
+                SecureField("API key", text: $keyInput)
                     .textContentType(.password)
                     .autocapitalization(.none)
                     .autocorrectionDisabled()

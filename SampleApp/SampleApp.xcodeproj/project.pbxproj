@@ -153,7 +153,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "KEY=\"${GEMINI_API_KEY}\"\nKEY=\"${KEY#\\\"}\"\nKEY=\"${KEY%\\\"}\"\nINFOPLIST=\"${BUILT_PRODUCTS_DIR}/${WRAPPER_NAME}/Info.plist\"\nif [ -f \"$INFOPLIST\" ] && [ -n \"$KEY\" ]; then\n  /usr/libexec/PlistBuddy -c \"Delete :GEMINI_API_KEY\" \"$INFOPLIST\" 2>/dev/null\n  /usr/libexec/PlistBuddy -c \"Add :GEMINI_API_KEY string \\\"$KEY\\\"\" \"$INFOPLIST\"\nfi\n";
+			shellScript = "INFOPLIST=\"${BUILT_PRODUCTS_DIR}/${WRAPPER_NAME}/Info.plist\"\nif [ -f \"$INFOPLIST\" ]; then\n  for KEYNAME in GEMINI_API_KEY CLAUDE_API_KEY OPENAI_API_KEY GROQ_API_KEY; do\n    eval RAW=\"\\${$KEYNAME}\"\n    RAW=\"${RAW#\\\"}\"\n    RAW=\"${RAW%\\\"}\"\n    if [ -n \"$RAW\" ]; then\n      /usr/libexec/PlistBuddy -c \"Delete :$KEYNAME\" \"$INFOPLIST\" 2>/dev/null\n      /usr/libexec/PlistBuddy -c \"Add :$KEYNAME string \\\"$RAW\\\"\" \"$INFOPLIST\"\n    fi\n  done\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

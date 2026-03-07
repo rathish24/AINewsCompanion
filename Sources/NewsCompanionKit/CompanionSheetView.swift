@@ -90,8 +90,8 @@ public struct CompanionSheetView: View {
                 return "Network error: \(error.localizedDescription)"
             }
         }
-        if let gemini = error as? GeminiClientError {
-            switch gemini {
+        if let clientError = error as? AIClientError {
+            switch clientError {
             case .apiError(let msg):
                 if msg.lowercased().contains("api key") || msg.lowercased().contains("invalid") || msg.contains("403") {
                     return "Invalid or missing API key. Set your Gemini key in the app and try again."

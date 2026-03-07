@@ -11,3 +11,10 @@ public protocol ArticleFetching: Sendable {
 public protocol AICompleting: Sendable {
     func complete(prompt: String) async throws -> String
 }
+
+// MARK: - Shared AI Client Error
+
+public enum AIClientError: Error {
+    case invalidResponse
+    case apiError(String)
+}

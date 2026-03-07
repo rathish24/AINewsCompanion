@@ -7,7 +7,7 @@ public final class GeminiClient: AICompleting, Sendable {
     private let model: String
     private let timeout: TimeInterval
 
-    public init(apiKey: String, model: String = "gemini-3-flash-preview", timeout: TimeInterval = 30) {
+    public init(apiKey: String, model: String = "gemini-2.0-flash", timeout: TimeInterval = 60) {
         self.apiKey = apiKey
         self.model = model
         self.timeout = timeout
@@ -25,17 +25,17 @@ public final class GeminiClient: AICompleting, Sendable {
             "contents": [["parts": [["text": prompt]]]],
             "generationConfig": [
                 "temperature": 0.2,
-                "maxOutputTokens": 2048,
+                "maxOutputTokens": 4096,
                 "responseMimeType": "application/json"
             ] as [String : Any]
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse else { throw GeminiClientError.invalidResponse }
+        guard let http = response as? HTTPURLResponse else { throw AIClientError.invalidResponse }
         if http.statusCode != 200 {
             let msg = Self.parseAPIErrorBody(data, statusCode: http.statusCode)
-            throw GeminiClientError.apiError(msg)
+            throw AIClientError.apiError(msg)
         }
         return try parseGeminiResponse(data)
     }
@@ -71,28 +71,25 @@ public final class GeminiClient: AICompleting, Sendable {
 
     private func parseGeminiResponse(_ data: Data) throws -> String {
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw GeminiClientError.invalidResponse
+            throw AIClientError.invalidResponse
         }
-        // Handle empty candidates or safety block (API can return 200 with no text)
         guard let candidates = json["candidates"] as? [[String: Any]], let first = candidates.first else {
             if let promptFeedback = json["promptFeedback"] as? [String: Any],
                let blockReason = promptFeedback["blockReason"] as? String {
-                throw GeminiClientError.apiError("Content blocked: \(blockReason). Try a different article.")
+                throw AIClientError.apiError("Content blocked: \(blockReason). Try a different article.")
             }
-            throw GeminiClientError.invalidResponse
+            throw AIClientError.invalidResponse
         }
         guard let content = first["content"] as? [String: Any],
               let parts = content["parts"] as? [[String: Any]],
               let part = parts.first,
               let text = part["text"] as? String else {
             let reason = (first["finishReason"] as? String).map { " (\($0))" } ?? ""
-            throw GeminiClientError.apiError("No text in response\(reason). Try again or another article.")
+            throw AIClientError.apiError("No text in response\(reason). Try again or another article.")
         }
         return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 
-public enum GeminiClientError: Error {
-    case invalidResponse
-    case apiError(String)
-}
+@available(*, deprecated, renamed: "AIClientError")
+public typealias GeminiClientError = AIClientError

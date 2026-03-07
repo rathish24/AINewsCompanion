@@ -1,18 +1,49 @@
 import Foundation
 
+// MARK: - AI Provider
+
+public enum AIProvider: String, CaseIterable, Sendable, Codable {
+    case gemini
+    case claude
+    case openAI
+    case groq
+    case huggingFace
+
+    public var displayName: String {
+        switch self {
+        case .gemini:      return "Gemini"
+        case .claude:      return "Claude"
+        case .openAI:      return "OpenAI"
+        case .groq:        return "Groq"
+        case .huggingFace: return "Hugging Face"
+        }
+    }
+}
+
 /// Main API for the AI-powered news companion.
 public enum NewsCompanionKit {
 
     public struct Config: Sendable {
         public var apiKey: String
+        public var provider: AIProvider
+        public var model: String?
         public var articleFetcher: (any ArticleFetching)?
         public var timeout: TimeInterval
         public var maxArticleLength: Int
-        /// When set, the kit logs API request/response summary (no key or full body). Used for debug.
         public var debugLog: (@Sendable (String) -> Void)?
 
-        public init(apiKey: String, articleFetcher: (any ArticleFetching)? = nil, timeout: TimeInterval = 25, maxArticleLength: Int = 12_000, debugLog: (@Sendable (String) -> Void)? = nil) {
+        public init(
+            apiKey: String,
+            provider: AIProvider = .groq,
+            model: String? = nil,
+            articleFetcher: (any ArticleFetching)? = nil,
+            timeout: TimeInterval = 60,
+            maxArticleLength: Int = 12_000,
+            debugLog: (@Sendable (String) -> Void)? = nil
+        ) {
             self.apiKey = apiKey
+            self.provider = provider
+            self.model = model
             self.articleFetcher = articleFetcher
             self.timeout = timeout
             self.maxArticleLength = maxArticleLength
@@ -20,28 +51,59 @@ public enum NewsCompanionKit {
         }
     }
 
-    /// Generates companion insights for the article at the given URL. Use the returned result to render the companion sheet.
-    /// - Parameters:
-    ///   - url: Article URL.
-    ///   - config: Configuration including API key (supply key when ready).
-    /// - Returns: Structured companion result, or throws on fetch/AI failure.
+    /// Creates the appropriate AI client for the configured provider.
+    static func makeAIClient(config: Config) -> any AICompleting {
+        switch config.provider {
+        case .gemini:
+            return GeminiClient(
+                apiKey: config.apiKey,
+                model: config.model ?? "gemini-2.0-flash",
+                timeout: config.timeout
+            )
+        case .claude:
+            return ClaudeClient(
+                apiKey: config.apiKey,
+                model: config.model ?? "claude-sonnet-4-20250514",
+                timeout: config.timeout
+            )
+        case .openAI:
+            return OpenAIClient(
+                apiKey: config.apiKey,
+                model: config.model ?? "gpt-4o-mini",
+                timeout: config.timeout
+            )
+        case .groq:
+            return GroqClient(
+                apiKey: config.apiKey,
+                model: config.model ?? "llama-3.1-8b-instant",
+                timeout: config.timeout
+            )
+        case .huggingFace:
+            return HuggingFaceClient(
+                apiKey: config.apiKey,
+                model: config.model ?? "mistralai/Mistral-7B-Instruct-v0.3",
+                timeout: config.timeout
+            )
+        }
+    }
+
     public static func generate(url: URL, config: Config) async throws -> CompanionResult {
         do {
-            config.debugLog?("API request starting – url: \(url.absoluteString)")
+            config.debugLog?("[\(config.provider.displayName)] request starting – url: \(url.absoluteString)")
             let fetcher: any ArticleFetching = config.articleFetcher ?? ArticleFetcher(config: .init(maxArticleLength: config.maxArticleLength))
             let article = try await fetcher.fetch(url: url)
             config.debugLog?("Article fetched – title: \(article.title.prefix(60))...")
             guard !article.text.trimmingCharacters(in: .whitespaces).isEmpty else {
                 throw NewsCompanionKitError.emptyArticle
             }
-            config.debugLog?("Calling Gemini generateContent...")
-            let aiClient = GeminiClient(apiKey: config.apiKey, timeout: config.timeout)
+            config.debugLog?("Calling \(config.provider.displayName) (\(config.model ?? "default model"))...")
+            let aiClient = makeAIClient(config: config)
             let engine = ConversationEngine(aiClient: aiClient, maxArticleChars: config.maxArticleLength)
             let result = try await engine.generate(article: article)
-            config.debugLog?("API response OK – oneLiner: \(result.summary.oneLiner.prefix(80))...")
+            config.debugLog?("[\(config.provider.displayName)] response OK – oneLiner: \(result.summary.oneLiner.prefix(80))...")
             return result
         } catch {
-            config.debugLog?("API failed – \(error.localizedDescription)")
+            config.debugLog?("[\(config.provider.displayName)] failed – \(error.localizedDescription)")
             throw error
         }
     }
