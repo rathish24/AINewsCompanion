@@ -229,7 +229,10 @@ struct ContentView: View {
                         }
                         return try await NewsCompanionKit.generate(url: url, config: config)
                     },
-                    onDismiss: { companionURL = nil }
+                    onDismiss: { companionURL = nil },
+                    onCompanionLoaded: { result in
+                        try? CompanionCache.save(result: result, for: identifiable.url, modelContext: modelContext)
+                    }
                 )
                 .modifier(PresentationDetentsWhenAvailable())
             }
@@ -250,10 +253,12 @@ struct ContentView: View {
         .onChange(of: selectedTTSProvider) { _, _ in setElevenLabsTranslatorIfNeeded() }
         .onChange(of: selectedElevenLabsLanguage) { _, newLang in
             setElevenLabsTranslatorIfNeeded()
+            playbackController.stopPlayback()
             speaker.clearReplayCache()
             speaker.configure(provider: selectedTTSProvider, sarvamLanguage: selectedSarvamLanguage, elevenLabsLanguage: newLang)
         }
         .onChange(of: selectedSarvamLanguage) { _, newLang in
+            playbackController.stopPlayback()
             speaker.clearReplayCache()
             speaker.configure(provider: selectedTTSProvider, sarvamLanguage: newLang, elevenLabsLanguage: selectedElevenLabsLanguage)
         }

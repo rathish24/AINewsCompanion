@@ -16,6 +16,8 @@ public struct CompanionSheetView: View {
     private let onDismiss: (() -> Void)?
     private let onTopicTap: ((TopicChip) -> Void)?
     private let onTelemetry: ((TelemetryEvent) -> Void)?
+    /// Called when a companion result has been successfully loaded (from cache or API). Use to persist the result so audio can play without re-opening the sheet.
+    private let onCompanionLoaded: ((CompanionResult) -> Void)?
 
     @Environment(\.dismiss) private var dismiss
     @State private var viewState: LoadingState = .loading
@@ -27,7 +29,8 @@ public struct CompanionSheetView: View {
         generateCompanion: ((URL) async throws -> CompanionResult)? = nil,
         onDismiss: (() -> Void)? = nil,
         onTopicTap: ((TopicChip) -> Void)? = nil,
-        onTelemetry: ((TelemetryEvent) -> Void)? = nil
+        onTelemetry: ((TelemetryEvent) -> Void)? = nil,
+        onCompanionLoaded: ((CompanionResult) -> Void)? = nil
     ) {
         self.url = url
         self.config = config
@@ -35,6 +38,7 @@ public struct CompanionSheetView: View {
         self.onDismiss = onDismiss
         self.onTopicTap = onTopicTap
         self.onTelemetry = onTelemetry
+        self.onCompanionLoaded = onCompanionLoaded
     }
 
     public var body: some View {
@@ -131,6 +135,7 @@ public struct CompanionSheetView: View {
             }
             onTelemetry?(.summaryCompletionRate(success: true))
             viewState = .loaded(result)
+            onCompanionLoaded?(result)
         } catch {
             onTelemetry?(.summaryCompletionRate(success: false))
             viewState = .failed(failureMessage(for: error))

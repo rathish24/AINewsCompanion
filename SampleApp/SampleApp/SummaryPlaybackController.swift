@@ -49,7 +49,15 @@ final class SummaryPlaybackController: ObservableObject {
     func isActive(for url: URL) -> Bool {
         playingURL == url && (speaker.playerManager.isPlaying || speaker.playerManager.isPaused)
     }
-    
+
+    /// Stops current playback and clears state. Call when the user changes TTS language so the next play uses the new language instead of continuing the old audio.
+    func stopPlayback() {
+        playTask?.cancel()
+        speaker.stop()
+        playingURL = nil
+        preparingURL = nil
+    }
+
     func togglePlayPause(
         for url: URL,
         modelContext: ModelContext,
