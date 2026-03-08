@@ -79,7 +79,7 @@ public struct CompanionSheetView: View {
         onDismiss?()
     }
 
-    private static func failureMessage(for error: Error) -> String {
+    private func failureMessage(for error: Error) -> String {
         if (error as NSError).domain == NSURLErrorDomain {
             switch (error as NSError).code {
             case NSURLErrorNotConnectedToInternet:
@@ -94,7 +94,7 @@ public struct CompanionSheetView: View {
             switch clientError {
             case .apiError(let msg):
                 if msg.lowercased().contains("api key") || msg.lowercased().contains("invalid") || msg.contains("403") {
-                    return "Invalid or missing API key. Set your Gemini key in the app and try again."
+                    return "Invalid or missing API key. Set your \(config.provider.displayName) key in ApiKeys.xcconfig and try again."
                 }
                 return "API error: \(msg)"
             case .invalidResponse:
@@ -107,7 +107,7 @@ public struct CompanionSheetView: View {
         if let conv = error as? ConversationEngineError {
             switch conv {
             case .aiFailed(let underlying):
-                return Self.failureMessage(for: underlying)
+                return failureMessage(for: underlying)
             case .invalidJSON:
                 return "The AI could not format a summary. Try again or use another article."
             }
@@ -133,7 +133,7 @@ public struct CompanionSheetView: View {
             viewState = .loaded(result)
         } catch {
             onTelemetry?(.summaryCompletionRate(success: false))
-            viewState = .failed(Self.failureMessage(for: error))
+            viewState = .failed(failureMessage(for: error))
         }
     }
 }

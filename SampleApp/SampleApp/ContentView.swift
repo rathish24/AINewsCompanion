@@ -216,7 +216,7 @@ struct ContentView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .sheet(item: Binding(
-            get: { companionURL.map(IdentifiableCompanionURL.init) },
+            get: { companionURL.map { IdentifiableCompanionURL(url: $0, provider: selectedProvider) } },
             set: { companionURL = $0?.url }
         )) { identifiable in
             if let config = companionConfig {
@@ -366,7 +366,8 @@ private extension String {
 
 private struct IdentifiableCompanionURL: Identifiable {
     let url: URL
-    var id: String { url.absoluteString }
+    let provider: AIProvider
+    var id: String { "\(url.absoluteString)_\(provider.rawValue)" }
 }
 
 private struct PresentationDetentsWhenAvailable: ViewModifier {
