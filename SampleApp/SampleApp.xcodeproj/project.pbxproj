@@ -13,6 +13,7 @@
 
 		A1B1C1D10006 /* CompanionCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B1C1D20006 /* CompanionCache.swift */; };
 		A1B1C1D10007 /* CompanionDebug.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B1C1D20007 /* CompanionDebug.swift */; };
+		A1B1C1D10009 /* SummaryPlaybackController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B1C1D20009 /* SummaryPlaybackController.swift */; };
 		BB591B612F5B4EAE00CEC212 /* NewsCompanionKit in Frameworks */ = {isa = PBXBuildFile; productRef = A1B1C1D50002 /* NewsCompanionKit */; };
 		A1B1C1D10008 /* SummaryToAudio in Frameworks */ = {isa = PBXBuildFile; productRef = A1B1C1D50003 /* SummaryToAudio */; };
 /* End PBXBuildFile section */
@@ -26,6 +27,7 @@
 		A1B1C1D20005 /* ApiKeys.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = ApiKeys.xcconfig; sourceTree = "<group>"; };
 		A1B1C1D20006 /* CompanionCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionCache.swift; sourceTree = "<group>"; };
 		A1B1C1D20007 /* CompanionDebug.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionDebug.swift; sourceTree = "<group>"; };
+		A1B1C1D20009 /* SummaryPlaybackController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryPlaybackController.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -58,6 +60,7 @@
 
 				A1B1C1D20006 /* CompanionCache.swift */,
 				A1B1C1D20007 /* CompanionDebug.swift */,
+				A1B1C1D20009 /* SummaryPlaybackController.swift */,
 				A1B1C1D20003 /* Assets.xcassets */,
 			);
 			path = SampleApp;
@@ -170,6 +173,7 @@
 
 				A1B1C1D10006 /* CompanionCache.swift in Sources */,
 				A1B1C1D10007 /* CompanionDebug.swift in Sources */,
+				A1B1C1D10009 /* SummaryPlaybackController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

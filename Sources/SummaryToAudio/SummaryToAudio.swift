@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 
 @MainActor
 public final class SummaryToAudio: ObservableObject {
@@ -9,6 +10,7 @@ public final class SummaryToAudio: ObservableObject {
     
     private let sarvamClient = SarvamAIClient()
     private let elevenLabsClient = ElevenLabsClient()
+    private var cancellables = Set<AnyCancellable>()
     
     private var lastAudioData: Data?
     private var lastText: String?
@@ -17,6 +19,10 @@ public final class SummaryToAudio: ObservableObject {
 
     private init() {
         self.config = SpeechConfig()
+        playerManager.objectWillChange
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &cancellables)
     }
     
     public func configure(
@@ -113,5 +119,13 @@ public final class SummaryToAudio: ObservableObject {
     
     public func stop() {
         playerManager.stop()
+    }
+
+    public func pause() {
+        playerManager.pause()
+    }
+
+    public func resume() {
+        playerManager.resume()
     }
 }

@@ -35,6 +35,7 @@ private let skyArticleList: [SkyArticle] = [
 
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
+    @StateObject private var playbackController = SummaryPlaybackController()
     @State private var companionURL: URL?
     @State private var selectedProvider: AIProvider = Self.savedProvider()
     @State private var selectedTTSProvider: TTSProvider = Self.savedTTSProvider()
@@ -140,12 +141,21 @@ struct ContentView: View {
             List(skyArticleList) { article in
                 ArticleRow(
                     article: article,
-                    isPlaying: speaker.playerManager.isPlaying,
-                    isLoading: speaker.playerManager.isLoading,
+                    isPlaying: playbackController.isPlaying(for: article.url),
+                    isLoading: playbackController.isLoading(for: article.url),
+                    isPaused: playbackController.isPaused(for: article.url),
                     isAIEnabled: effectiveAPIKey != nil,
                     isTTSEnabled: selectedTTSProvider == .sarvam ? effectiveSarvamAPIKey != nil : effectiveElevenLabsAPIKey != nil,
                     onCompanionTap: { companionURL = article.url },
-                    onPlayTap: { playSummary(for: article.url) },
+                    onPlayTap: {
+                        playbackController.togglePlayPause(
+                            for: article.url,
+                            modelContext: modelContext,
+                            selectedLanguage: selectedLanguage,
+                            selectedTTSProvider: selectedTTSProvider,
+                            onOpenCompanion: { companionURL = $0 }
+                        )
+                    },
                     onLongPress: { showLanguageSelection = true }
                 )
             }
@@ -205,66 +215,13 @@ struct ContentView: View {
         }
     }
 
-    private func playSummary(for url: URL) {
-        if speaker.playerManager.isPlaying {
-            speaker.stop()
-            return
-        }
-
-        guard let cached = CompanionCache.cachedResult(for: url, modelContext: modelContext) else {
-            // If not cached, maybe prompt to open companion first?
-            // For now, just generate summary then play
-            Task {
-                companionURL = url
-            }
-            return
-        }
-
-        Task {
-            let summary = cached.summary
-            let bulletsText = summary.bullets
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty }
-                .map { $0.hasSuffix(".") ? $0 : $0 + "." }
-                .joined(separator: " ")
-            
-            let fullText = "\(summary.oneLiner.trimmingCharacters(in: .whitespacesAndNewlines)) \(bulletsText) Why it matters: \(summary.whyItMatters.trimmingCharacters(in: .whitespacesAndNewlines))"
-            
-            // Cache key: ElevenLabs is English-only so we cache by .english; Sarvam caches per selected language.
-            let effectiveLanguage: SpeechLanguage = selectedTTSProvider == .elevenLabs ? .english : selectedLanguage
-            
-            if let cachedText = TranslationCache.cachedTranslation(for: url, language: effectiveLanguage, modelContext: modelContext) {
-                print("[TTS] translatedText source: CACHE (SwiftData) | url: \(url.absoluteString) | languageCode: \(effectiveLanguage.rawValue) | chars: \(cachedText.count)")
-                CompanionDebug.log("[TTS] translatedText source: CACHE (SwiftData) | languageCode: \(effectiveLanguage.rawValue) | chars: \(cachedText.count)")
-                await speaker.play(text: cachedText, language: selectedLanguage, textIsAlreadyTranslated: true)
-                return
-            }
-
-            var textToSpeak: String
-            if effectiveLanguage == .english {
-                textToSpeak = fullText
-            } else {
-                do {
-                    textToSpeak = try await speaker.translateIfNeeded(text: fullText, language: effectiveLanguage)
-                } catch {
-                    print("ContentView: Translation failed, using original: \(error.localizedDescription)")
-                    textToSpeak = fullText
-                }
-            }
-            // Save generated text per (url, languageCode) so next tap uses cache (any language including English).
-            try? TranslationCache.save(translatedText: textToSpeak, for: url, language: effectiveLanguage, modelContext: modelContext)
-
-            print("[TTS] translatedText source: API RESPONSE (then saved to SwiftData) | url: \(url.absoluteString) | languageCode: \(effectiveLanguage.rawValue) | chars: \(textToSpeak.count)")
-            CompanionDebug.log("[TTS] translatedText source: API RESPONSE | languageCode: \(effectiveLanguage.rawValue) | chars: \(textToSpeak.count) | saved to SwiftData")
-            await speaker.play(text: textToSpeak, language: selectedLanguage, textIsAlreadyTranslated: true)
-        }
-    }
 }
 
 struct ArticleRow: View {
     let article: SkyArticle
     let isPlaying: Bool
     let isLoading: Bool
+    let isPaused: Bool
     let isAIEnabled: Bool
     let isTTSEnabled: Bool
     let onCompanionTap: () -> Void
@@ -291,14 +248,21 @@ struct ArticleRow: View {
             .disabled(!isAIEnabled)
 
             ZStack {
-                if isLoading {
-                    ProgressView()
-                        .controlSize(.small)
+                if isPlaying {
+                    AudioWaveformView()
                 } else {
-                    Image(systemName: isPlaying ? "stop.fill" : "speaker.wave.2")
+                    Image(systemName: "speaker.wave.2")
                         .font(.body)
                 }
+                if isLoading {
+                    Color.blue.opacity(0.15)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(.blue)
+                }
             }
+            .frame(width: 32, height: 32)
             .padding(8)
             .background(Color.blue.opacity(0.1))
             .cornerRadius(8)
@@ -311,6 +275,33 @@ struct ArticleRow: View {
             .opacity(isTTSEnabled ? 1.0 : 0.5)
         }
         .padding(.vertical, 4)
+    }
+}
+
+// MARK: - Simple audio waveform animation (shown while playing)
+
+private struct AudioWaveformView: View {
+    private let barCount = 5
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 0.08)) { context in
+            HStack(spacing: 3) {
+                ForEach(0..<barCount, id: \.self) { index in
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(Color.blue)
+                        .frame(width: 3, height: barHeight(for: index, date: context.date))
+                }
+            }
+            .animation(.easeInOut(duration: 0.1), value: context.date)
+        }
+    }
+
+    private func barHeight(for index: Int, date: Date) -> CGFloat {
+        let base: CGFloat = 6
+        let peak: CGFloat = 14
+        let t = date.timeIntervalSinceReferenceDate + Double(index) * 0.25
+        let s = (sin(t * 5) + 1) / 2
+        return base + (peak - base) * CGFloat(s)
     }
 }
 
