@@ -23,11 +23,11 @@ public final class AudioPlayerManager: NSObject, ObservableObject, AVAudioPlayer
             isLoading = false
             isPaused = false
 
-            // Configure audio session for playback
+            #if os(iOS)
             let session = AVAudioSession.sharedInstance()
-            print("AudioPlayerManager: Setting category to .playback")
             try session.setCategory(.playback, mode: .default, options: [.duckOthers, .defaultToSpeaker])
             try session.setActive(true)
+            #endif
 
             player = try AVAudioPlayer(data: data)
             player?.delegate = self

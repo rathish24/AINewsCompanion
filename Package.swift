@@ -5,7 +5,7 @@ let package = Package(
     name: "AINewsCompanion",
     platforms: [
         .iOS(.v17),
-        .macOS(.v13)
+        .macOS(.v13)  // For command-line swift test; app and TTS are iOS-only—run tests in Xcode with iOS Simulator.
     ],
     products: [
         .library(name: "NewsCompanionKit", targets: ["NewsCompanionKit"]),

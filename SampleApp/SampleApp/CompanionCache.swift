@@ -68,28 +68,34 @@ final class CachedTranslation {
     var languageCode: String = ""
     var translatedText: String = ""
     var createdAt: Date = Date()
+    /// Bump when translation logic changes so old (e.g. untranslated) entries are ignored.
+    var cacheVersion: Int = 1
 
-    init(url: URL, language: SpeechLanguage, translatedText: String) {
+    init(url: URL, languageCode: String, translatedText: String) {
         self.urlString = url.absoluteString
-        self.languageCode = language.rawValue
+        self.languageCode = languageCode
         self.translatedText = translatedText
         self.createdAt = Date()
+        self.cacheVersion = TranslationCache.cacheVersion
     }
 
     init() {}
 }
 
 enum TranslationCache {
+    /// Bump when translation behavior changes (e.g. ElevenLabs now gets real translation) so stale entries are ignored.
+    static let cacheVersion = 2
     /// How long to keep a cached translation before refetching (e.g. 7 days).
     static let cacheValidityDuration: TimeInterval = 7 * 24 * 60 * 60
 
-    /// Returns the cached "text to speak" for (url, language), or nil if missing/expired.
-    /// Use `effectiveLanguage`: for ElevenLabs use `.english` (we don't translate); for Sarvam use the selected language.
-    static func cachedTranslation(for url: URL, language: SpeechLanguage, modelContext: ModelContext) -> String? {
+    /// Returns the cached "text to speak" for (url, languageCode), or nil if missing/expired or wrong version.
+    /// Pass effectiveLanguage.cacheKey so the same cache works for both Sarvam and ElevenLabs.
+    static func cachedTranslation(for url: URL, languageCode: String, modelContext: ModelContext) -> String? {
         let descriptor = FetchDescriptor<CachedTranslation>(
-            predicate: #Predicate<CachedTranslation> { $0.urlString == url.absoluteString && $0.languageCode == language.rawValue }
+            predicate: #Predicate<CachedTranslation> { $0.urlString == url.absoluteString && $0.languageCode == languageCode }
         )
         guard let cached = try? modelContext.fetch(descriptor).first else { return nil }
+        guard cached.cacheVersion == cacheVersion else { return nil }
         guard Date().timeIntervalSince(cached.createdAt) < cacheValidityDuration else {
             try? modelContext.delete(cached)
             try? modelContext.save()
@@ -98,15 +104,26 @@ enum TranslationCache {
         return cached.translatedText
     }
 
-    /// Saves the "text to speak" for (url, language). Overwrites any existing entry for that key.
-    static func save(translatedText: String, for url: URL, language: SpeechLanguage, modelContext: ModelContext) throws {
+    /// Removes cached translation for (url, languageCode). Use when entry is stale (e.g. untranslated).
+    static func delete(url: URL, languageCode: String, modelContext: ModelContext) {
         let descriptor = FetchDescriptor<CachedTranslation>(
-            predicate: #Predicate<CachedTranslation> { $0.urlString == url.absoluteString && $0.languageCode == language.rawValue }
+            predicate: #Predicate<CachedTranslation> { $0.urlString == url.absoluteString && $0.languageCode == languageCode }
         )
         for existing in (try? modelContext.fetch(descriptor)) ?? [] {
             modelContext.delete(existing)
         }
-        let cached = CachedTranslation(url: url, language: language, translatedText: translatedText)
+        try? modelContext.save()
+    }
+
+    /// Saves the "text to speak" for (url, languageCode). Overwrites any existing entry for that key.
+    static func save(translatedText: String, for url: URL, languageCode: String, modelContext: ModelContext) throws {
+        let descriptor = FetchDescriptor<CachedTranslation>(
+            predicate: #Predicate<CachedTranslation> { $0.urlString == url.absoluteString && $0.languageCode == languageCode }
+        )
+        for existing in (try? modelContext.fetch(descriptor)) ?? [] {
+            modelContext.delete(existing)
+        }
+        let cached = CachedTranslation(url: url, languageCode: languageCode, translatedText: translatedText)
         modelContext.insert(cached)
         try modelContext.save()
     }

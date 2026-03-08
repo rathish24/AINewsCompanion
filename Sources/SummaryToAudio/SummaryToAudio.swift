@@ -10,11 +10,14 @@ public final class SummaryToAudio: ObservableObject {
     
     private let sarvamClient = SarvamAIClient()
     private let elevenLabsClient = ElevenLabsClient()
+    private let translationAPIClient = TranslationAPIClient()
     private var cancellables = Set<AnyCancellable>()
-    
+    /// When set, used to translate text for ElevenLabs non-English (overrides built-in translation API).
+    private var elevenLabsTranslator: (@Sendable (String, String) async throws -> String)?
+
     private var lastAudioData: Data?
     private var lastText: String?
-    private var lastLanguage: SpeechLanguage?
+    private var lastLanguageKey: String?
     private var lastProvider: TTSProvider?
 
     private init() {
@@ -25,16 +28,33 @@ public final class SummaryToAudio: ObservableObject {
             .store(in: &cancellables)
     }
     
+    /// Clears the in-memory replay cache so the next play always fetches/generates new audio. Call when the user switches TTS provider or language so previous (e.g. Sarvam Tamil) audio is never replayed.
+    public func clearReplayCache() {
+        lastAudioData = nil
+        lastText = nil
+        lastLanguageKey = nil
+        lastProvider = nil
+    }
+
     public func configure(
         provider: TTSProvider? = nil,
         elevenLabsKey: String? = nil,
         sarvamKey: String? = nil,
-        language: SpeechLanguage? = nil
+        sarvamLanguage: SpeechLanguage? = nil,
+        elevenLabsLanguage: ElevenLabsLanguage? = nil,
+        libreTranslateBaseURL: String? = nil,
+        libreTranslateAPIKey: String? = nil
     ) {
-        if let provider = provider { config.provider = provider }
+        if let provider = provider {
+            if config.provider != provider {
+                clearReplayCache()
+            }
+            config.provider = provider
+        }
         if let key = elevenLabsKey { config.elevenLabsApiKey = key }
         if let key = sarvamKey { config.sarvamApiKey = key }
-        if let lang = language { config.language = lang }
+        if let lang = sarvamLanguage { config.sarvamLanguage = lang }
+        if let lang = elevenLabsLanguage { config.elevenLabsLanguage = lang }
         
         Task {
             if let sarvamKey = config.sarvamApiKey {
@@ -43,72 +63,92 @@ public final class SummaryToAudio: ObservableObject {
             if let elevenLabsKey = config.elevenLabsApiKey {
                 await elevenLabsClient.configure(apiKey: elevenLabsKey)
             }
+            await translationAPIClient.configure(libreTranslateBaseURL: libreTranslateBaseURL, libreTranslateAPIKey: libreTranslateAPIKey)
         }
     }
 
-    /// Returns the text that should be sent to TTS for the given language.
-    /// For English returns `text` as-is; for other languages returns translated text via Sarvam (when configured).
-    /// Use this to resolve "text to speak" before calling `play(text:language:textIsAlreadyTranslated:)` so you can cache the result (e.g. in SwiftData).
-    public func translateIfNeeded(text: String, language: SpeechLanguage) async throws -> String {
-        if language == .english {
-            return text
+    /// Set a translator used when ElevenLabs is selected and language is not English. Closure receives (text, languageCode) and returns translated text.
+    public func setElevenLabsTranslator(_ translator: (@Sendable (String, String) async throws -> String)?) {
+        elevenLabsTranslator = translator
+    }
+
+    /// Returns the text that should be sent to TTS for the given effective language.
+    /// Sarvam: uses only Sarvam's internal translate API (sarvamClient.translate). No TranslationAPIClient or ElevenLabs.
+    /// ElevenLabs: English → pass-through; non-English → translation API (custom translator if set, else TranslationAPIClient). No Sarvam.
+    public func translateIfNeeded(text: String, effectiveLanguage: EffectiveTTSLanguage) async throws -> String {
+        switch effectiveLanguage {
+        case .sarvam(let lang):
+            return try await textForSarvamTTS(sourceText: text, language: lang)
+        case .elevenLabs(let lang):
+            return try await textForElevenLabsTTS(sourceText: text, language: lang)
         }
-        guard config.sarvamApiKey != nil else {
-            return text
+    }
+
+    /// Sarvam-only path: returns text ready for Sarvam TTS. English → pass-through; other languages → Sarvam translate API only. No external translation client.
+    private func textForSarvamTTS(sourceText: String, language: SpeechLanguage) async throws -> String {
+        if language == .english { return sourceText }
+        guard let key = config.sarvamApiKey else {
+            throw NSError(domain: "SummaryToAudio", code: -1, userInfo: [NSLocalizedDescriptionKey: "Sarvam API key not configured. Add SARVAM_API_KEY to use Tamil and other languages."])
         }
-        return try await sarvamClient.translate(text: text, targetLanguage: language)
+        await sarvamClient.configure(apiKey: key)
+        return try await sarvamClient.translate(text: sourceText, targetLanguage: language)
+    }
+
+    /// ElevenLabs-only path: returns text ready for ElevenLabs TTS. English → pass-through; non-English → translation API (custom translator or TranslationAPIClient). No Sarvam. Text is passed to translation API then to ElevenLabs.
+    private func textForElevenLabsTTS(sourceText: String, language: ElevenLabsLanguage) async throws -> String {
+        if language == .english { return sourceText }
+        if let translate = elevenLabsTranslator {
+            return try await translate(sourceText, language.languageCode)
+        }
+        return try await translationAPIClient.translate(text: sourceText, targetLanguageCode: language.languageCode)
     }
 
     /// Plays the given text as speech. When `textIsAlreadyTranslated` is true, `text` is used as the final script for TTS (no translation step); use this when you have cached translated text.
-    public func play(text: String, language: SpeechLanguage? = nil, textIsAlreadyTranslated: Bool = false) async {
-        let lang = language ?? config.language
-        
-        // Replay cache check
-        if text == lastText, lang == lastLanguage, config.provider == lastProvider, let data = lastAudioData {
+    public func play(text: String, effectiveLanguage: EffectiveTTSLanguage? = nil, textIsAlreadyTranslated: Bool = false) async {
+        let effective = effectiveLanguage ?? config.effectiveLanguage()
+        let langKey = effective.cacheKey
+
+        // Replay cache: only reuse when text, language, and provider all match (use effective.provider so UI is source of truth).
+        if text == lastText, langKey == lastLanguageKey, effective.provider == lastProvider, let data = lastAudioData {
             print("SummaryToAudio: Replaying cached audio")
             playerManager.play(data: data)
             return
         }
 
-        print("SummaryToAudio: Requesting speech for text (\(text.count) chars): [\(text.prefix(50))...] provider: \(config.provider.displayName) lang: \(lang.displayName) preTranslated: \(textIsAlreadyTranslated)")
+        // Use passed effective language as source of truth for TTS path (keeps in sync with UI even if config was stale).
+        let providerForTTS = effective.provider
+        print("SummaryToAudio: Requesting speech for text (\(text.count) chars): [\(text.prefix(50))...] provider: \(providerForTTS.displayName) lang: \(effective.displayName) preTranslated: \(textIsAlreadyTranslated)")
         playerManager.setLoading(true)
-        
+
         do {
             let textToSpeak: String
             if textIsAlreadyTranslated {
                 textToSpeak = text
             } else {
-                switch config.provider {
-                case .sarvam:
-                    if lang != .english {
-                        print("SummaryToAudio: Translating to \(lang.displayName)...")
-                        textToSpeak = try await sarvamClient.translate(text: text, targetLanguage: lang)
-                        print("SummaryToAudio: Translation complete. Length: \(textToSpeak.count) chars")
-                    } else {
-                        textToSpeak = text
-                    }
-                case .elevenLabs:
-                    textToSpeak = text
-                }
+                textToSpeak = try await translateIfNeeded(text: text, effectiveLanguage: effective)
             }
 
             let audioData: Data
-            switch config.provider {
-            case .sarvam:
+            switch (providerForTTS, effective) {
+            case (.sarvam, .sarvam(let lang)):
+                // Sarvam-only: TTS via Sarvam AI only; translation (when needed) is done above via textForSarvamTTS/sarvamClient.translate.
                 print("SummaryToAudio: Using Sarvam AI. Final text length: \(textToSpeak.count) chars")
                 audioData = try await sarvamClient.generateSpeech(text: textToSpeak, language: lang)
-            case .elevenLabs:
-                print("SummaryToAudio: Using ElevenLabs (Monolingual English)")
-                audioData = try await elevenLabsClient.generateSpeech(text: textToSpeak)
+            case (.elevenLabs, .elevenLabs(let lang)):
+                // ElevenLabs-only: TTS via ElevenLabs; translation (when needed) is done above via textForElevenLabsTTS (translation API or custom translator). No Sarvam.
+                print("SummaryToAudio: Using ElevenLabs (multilingual) lang=\(lang.languageCode)")
+                audioData = try await elevenLabsClient.generateSpeech(text: textToSpeak, languageCode: lang.languageCode)
+            default:
+                fatalError("Provider and effective language must match")
             }
-            
+
             print("SummaryToAudio: Received \(audioData.count) bytes of audio data")
-            
+
             lastAudioData = audioData
             lastText = textToSpeak
-            lastLanguage = lang
-            lastProvider = config.provider
-            
+            lastLanguageKey = langKey
+            lastProvider = providerForTTS
+
             playerManager.play(data: audioData)
         } catch {
             print("SummaryToAudio ERROR: \(error.localizedDescription)")

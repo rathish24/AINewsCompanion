@@ -39,7 +39,8 @@ struct ContentView: View {
     @State private var companionURL: URL?
     @State private var selectedProvider: AIProvider = Self.savedProvider()
     @State private var selectedTTSProvider: TTSProvider = Self.savedTTSProvider()
-    @State private var selectedLanguage: SpeechLanguage = .english
+    @State private var selectedSarvamLanguage: SpeechLanguage = .english
+    @State private var selectedElevenLabsLanguage: ElevenLabsLanguage = .english
     @State private var showLanguageSelection = false
     @ObservedObject private var speaker = SummaryToAudio.shared
 
@@ -78,6 +79,18 @@ struct ContentView: View {
         return nil
     }
 
+    private static func libreTranslateURL() -> String? {
+        guard let value = Bundle.main.object(forInfoDictionaryKey: "LIBRETRANSLATE_URL") as? String else { return nil }
+        let t = value.trimmingCharacters(in: .whitespaces)
+        return t.isEmpty || t.hasPrefix("YOUR_") ? nil : t
+    }
+
+    private static func libreTranslateAPIKey() -> String? {
+        guard let value = Bundle.main.object(forInfoDictionaryKey: "LIBRETRANSLATE_API_KEY") as? String else { return nil }
+        let t = value.trimmingCharacters(in: .whitespaces)
+        return t.isEmpty || t.hasPrefix("YOUR_") ? nil : t
+    }
+
     private var effectiveAPIKey: String? {
         Self.resolveAPIKey(for: selectedProvider)
     }
@@ -102,7 +115,25 @@ struct ContentView: View {
     private func saveTTSProvider(_ provider: TTSProvider) {
         UserDefaults.standard.set(provider.rawValue, forKey: "SummaryToAudioSelectedProvider")
         selectedTTSProvider = provider
-        speaker.configure(provider: provider)
+        speaker.clearReplayCache()
+        speaker.configure(provider: provider, sarvamLanguage: selectedSarvamLanguage, elevenLabsLanguage: selectedElevenLabsLanguage)
+    }
+
+    private var effectiveTTSLanguage: EffectiveTTSLanguage {
+        selectedTTSProvider == .sarvam
+            ? .sarvam(selectedSarvamLanguage)
+            : .elevenLabs(selectedElevenLabsLanguage)
+    }
+
+    private func setElevenLabsTranslatorIfNeeded() {
+        guard let config = companionConfig else {
+            SummaryToAudio.shared.setElevenLabsTranslator(nil)
+            return
+        }
+        SummaryToAudio.shared.setElevenLabsTranslator { [config] text, languageCode in
+            let name = ElevenLabsLanguage.allCases.first { $0.languageCode == languageCode }?.displayName ?? languageCode
+            return try await NewsCompanionKit.translate(text: text, targetLanguageCode: languageCode, targetLanguageName: name, config: config)
+        }
     }
 
     private var companionConfig: NewsCompanionKit.Config? {
@@ -148,11 +179,11 @@ struct ContentView: View {
                     isTTSEnabled: selectedTTSProvider == .sarvam ? effectiveSarvamAPIKey != nil : effectiveElevenLabsAPIKey != nil,
                     onCompanionTap: { companionURL = article.url },
                     onPlayTap: {
+                        setElevenLabsTranslatorIfNeeded()
                         playbackController.togglePlayPause(
                             for: article.url,
                             modelContext: modelContext,
-                            selectedLanguage: selectedLanguage,
-                            selectedTTSProvider: selectedTTSProvider,
+                            effectiveLanguage: effectiveTTSLanguage,
                             onOpenCompanion: { companionURL = $0 }
                         )
                     },
@@ -205,12 +236,25 @@ struct ContentView: View {
             speaker.configure(
                 provider: selectedTTSProvider,
                 elevenLabsKey: effectiveElevenLabsAPIKey,
-                sarvamKey: effectiveSarvamAPIKey
+                sarvamKey: effectiveSarvamAPIKey,
+                sarvamLanguage: selectedSarvamLanguage,
+                elevenLabsLanguage: selectedElevenLabsLanguage,
+                libreTranslateBaseURL: Self.libreTranslateURL(),
+                libreTranslateAPIKey: Self.libreTranslateAPIKey()
             )
+            setElevenLabsTranslatorIfNeeded()
         }
+        .onChange(of: selectedProvider) { _, _ in setElevenLabsTranslatorIfNeeded() }
+        .onChange(of: selectedTTSProvider) { _, _ in setElevenLabsTranslatorIfNeeded() }
+        .onChange(of: selectedElevenLabsLanguage) { _, _ in setElevenLabsTranslatorIfNeeded() }
         .overlay {
             if showLanguageSelection {
-                LanguageSelectionOverlay(selectedLanguage: $selectedLanguage, isPresented: $showLanguageSelection)
+                LanguageSelectionOverlay(
+                    selectedTTSProvider: selectedTTSProvider,
+                    selectedSarvamLanguage: $selectedSarvamLanguage,
+                    selectedElevenLabsLanguage: $selectedElevenLabsLanguage,
+                    isPresented: $showLanguageSelection
+                )
             }
         }
     }
@@ -330,7 +374,9 @@ private struct PresentationDetentsWhenAvailable: ViewModifier {
 }
 
 struct LanguageSelectionOverlay: View {
-    @Binding var selectedLanguage: SpeechLanguage
+    let selectedTTSProvider: TTSProvider
+    @Binding var selectedSarvamLanguage: SpeechLanguage
+    @Binding var selectedElevenLabsLanguage: ElevenLabsLanguage
     @Binding var isPresented: Bool
 
     var body: some View {
@@ -339,23 +385,17 @@ struct LanguageSelectionOverlay: View {
                 .ignoresSafeArea()
                 .onTapGesture { isPresented = false }
 
-            VStack(spacing: 20) {
-                Text("Select Language")
+            VStack(spacing: 16) {
+                Text(selectedTTSProvider == .elevenLabs ? "Select Language (ElevenLabs)" : "Select Language (Sarvam AI)")
                     .font(.headline)
 
-                VStack(spacing: 12) {
-                    HStack(spacing: 10) {
-                        chipButton(for: .english)
-                        chipButton(for: .hindi)
-                        chipButton(for: .tamil)
-                    }
-                    HStack(spacing: 10) {
-                        chipButton(for: .telugu)
-                        chipButton(for: .malayalam)
-                        chipButton(for: .gujarati)
-                    }
+                if selectedTTSProvider == .sarvam {
+                    sarvamChips
+                } else {
+                    elevenLabsChips
                 }
             }
+            .frame(maxHeight: 400)
             .padding(24)
             .background(Color(.secondarySystemBackground))
             .cornerRadius(20)
@@ -363,9 +403,24 @@ struct LanguageSelectionOverlay: View {
         }
     }
 
-    private func chipButton(for lang: SpeechLanguage) -> some View {
+    private var sarvamChips: some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 10) {
+                sarvamChip(.english)
+                sarvamChip(.hindi)
+                sarvamChip(.tamil)
+            }
+            HStack(spacing: 10) {
+                sarvamChip(.telugu)
+                sarvamChip(.malayalam)
+                sarvamChip(.gujarati)
+            }
+        }
+    }
+
+    private func sarvamChip(_ lang: SpeechLanguage) -> some View {
         Button {
-            selectedLanguage = lang
+            selectedSarvamLanguage = lang
             isPresented = false
         } label: {
             Text(lang.displayName)
@@ -373,11 +428,43 @@ struct LanguageSelectionOverlay: View {
                 .fontWeight(.medium)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
-                .background(selectedLanguage == lang ? Color.blue : Color.white)
-                .foregroundStyle(selectedLanguage == lang ? .white : .primary)
+                .background(selectedSarvamLanguage == lang ? Color.blue : Color.white)
+                .foregroundStyle(selectedSarvamLanguage == lang ? .white : .primary)
                 .overlay(
                     RoundedRectangle(cornerRadius: 20)
-                        .stroke(Color.blue.opacity(0.3), lineWidth: selectedLanguage == lang ? 0 : 1)
+                        .stroke(Color.blue.opacity(0.3), lineWidth: selectedSarvamLanguage == lang ? 0 : 1)
+                )
+                .clipShape(Capsule())
+        }
+    }
+
+    private var elevenLabsChips: some View {
+        ScrollView(.vertical, showsIndicators: true) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 100), spacing: 8)], spacing: 8) {
+                ForEach(ElevenLabsLanguage.allCases, id: \.self) { lang in
+                    elevenLabsChip(lang)
+                }
+            }
+            .padding(.vertical, 4)
+        }
+        .frame(maxHeight: 320)
+    }
+
+    private func elevenLabsChip(_ lang: ElevenLabsLanguage) -> some View {
+        Button {
+            selectedElevenLabsLanguage = lang
+            isPresented = false
+        } label: {
+            Text("\(lang.displayName) (\(lang.languageCode))")
+                .font(.subheadline)
+                .fontWeight(.medium)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(selectedElevenLabsLanguage == lang ? Color.blue : Color.white)
+                .foregroundStyle(selectedElevenLabsLanguage == lang ? .white : .primary)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20)
+                        .stroke(Color.blue.opacity(0.3), lineWidth: selectedElevenLabsLanguage == lang ? 0 : 1)
                 )
                 .clipShape(Capsule())
         }

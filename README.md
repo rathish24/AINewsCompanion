@@ -48,6 +48,10 @@ Or generate insights only: `let result = try await NewsCompanionKit.generate(url
 - Xcode 14+
 - Swift 5.9+
 
+## Testing
+
+Run tests in **Xcode with the iOS Simulator** as the run destination. macOS is not required for testing the app or TTS (SummaryToAudio). From the command line, `swift test` runs the package tests on the current platform (macOS); for full iOS behavior, use Xcode → Product → Test with an iOS Simulator selected.
+
 ## Installation
 
 ### Swift Package Manager
@@ -115,6 +119,42 @@ The **SampleApp** demonstrates NewsCompanionKit with a list of sample articles a
 1. Open `SampleApp/SampleApp.xcodeproj` in Xcode.
 2. Copy `SampleApp/ApiKeys.xcconfig.example` to `ApiKeys.xcconfig` and add your API keys (e.g. `GROQ_API_KEY = "your-groq-key"`). The project injects these into Info.plist at build time.
 3. Run the app, pick a provider (default: Groq), then tap an article and open the AI companion. The sheet shows loading, then the summary, bullets, “why it matters,” and topic chips; tap a chip to see its summary.
+
+## SummaryToAudio & TTS
+
+The sample app can speak the companion summary via **ElevenLabs** or **Sarvam AI**.
+
+### Flow (ElevenLabs with a non-English language)
+
+1. **English input** – Summary text from the companion (one-liner + bullets + why it matters).
+2. **Translate** – If the selected language is not English, text is translated using:
+   - **LibreTranslate** when `LIBRETRANSLATE_URL` (and optionally `LIBRETRANSLATE_API_KEY`) is set in your config.
+   - **MyMemory** (free, no key) otherwise; long text is chunked and translated in segments.
+   - Or an app-provided translator (e.g. AI) via `setElevenLabsTranslator(_:)`.
+3. **ElevenLabs TTS** – Translated (or original) text is sent to ElevenLabs with the chosen `language_code` (e.g. `fr`, `de`, `ja`). The model used is `eleven_multilingual_v2`.
+4. **Play** – The returned audio is played in the app. Translations are cached per URL + language.
+
+### ElevenLabs languages (29)
+
+English, Arabic, Bulgarian, Chinese, Croatian, Czech, Danish, Dutch, Filipino, Finnish, French, German, Greek, Hindi, Indonesian, Italian, Japanese, Korean, Malay, Polish, Portuguese, Romanian, Russian, Slovak, Spanish, Swedish, Tamil, Turkish, Ukrainian.
+
+### Sarvam vs ElevenLabs (English and non-English)
+
+Same flow shape for both providers; only the translation source and cache keys differ.
+
+| Aspect | Sarvam | ElevenLabs |
+|--------|--------|------------|
+| **English** | No translation; cache key `en-IN`; TTS via Sarvam. | No translation; cache key `en`; TTS via ElevenLabs. |
+| **Non-English** | Translation: **Sarvam API only** (`sarvamClient.translate`). Cache keys: `ta-IN`, `hi-IN`, `te-IN`, `ml-IN`, `gu-IN`. TTS: Sarvam. | Translation: **Translation API** (LibreTranslate / MyMemory) or custom translator. Cache keys: `fr`, `de`, `ta`, `hi`, etc. (29 langs). TTS: ElevenLabs. |
+| **Stale cache** | If cached text equals source (untranslated), entry is deleted and not used. | Same. |
+| **Translation failure** | Fallback: cached English (`en-IN`) or source text; play in English. | Fallback: cached English (`en`) or source text; play in English. |
+
+Sarvam and ElevenLabs are decoupled: removing one does not require changes in the other’s client or translation path.
+
+### Optional config
+
+- **LibreTranslate**: In `ApiKeys.xcconfig` (or Info.plist), set `LIBRETRANSLATE_URL` (e.g. `https://libretranslate.com`) and optionally `LIBRETRANSLATE_API_KEY` for better translation quality and no chunking.
+- **Translation failure**: If translation fails (e.g. network), the user sees “Translation failed. Playing in English.” and the original English is spoken.
 
 ## How it works
 

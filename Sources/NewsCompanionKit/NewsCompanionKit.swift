@@ -87,6 +87,26 @@ public enum NewsCompanionKit {
         }
     }
 
+    /// Translates English text to the target language using the configured AI provider. Use for TTS when the target language is not English.
+    public static func translate(text: String, targetLanguageCode: String, targetLanguageName: String, config: Config) async throws -> String {
+        let prompt = """
+        You are a translator. Translate the following English text into \(targetLanguageName). Output only the \(targetLanguageName) translation, nothing else: no quotes, no "Translation:", no explanation.
+
+        Text to translate:
+        \(text)
+        """
+        let client = makeAIClient(config: config)
+        let result = try await client.complete(prompt: prompt)
+        var translated = result.trimmingCharacters(in: .whitespacesAndNewlines)
+        for prefix in ["Translation:", "Here is the translation:", "Here's the translation:", "\(targetLanguageName) translation:"] {
+            if translated.lowercased().hasPrefix(prefix.lowercased()) {
+                translated = String(translated.dropFirst(prefix.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+                break
+            }
+        }
+        return translated
+    }
+
     public static func generate(url: URL, config: Config) async throws -> CompanionResult {
         do {
             config.debugLog?("[\(config.provider.displayName)] request starting – url: \(url.absoluteString)")

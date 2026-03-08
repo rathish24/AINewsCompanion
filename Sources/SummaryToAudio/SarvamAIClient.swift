@@ -1,5 +1,10 @@
 import Foundation
 
+// MARK: - Sarvam AI client (decoupled)
+// This client is standalone: it does not depend on ElevenLabs or any external translation service.
+// Translation for non-English is done via Sarvam's own translate API (translate(text:targetLanguage:)).
+// Removing or changing the ElevenLabs client requires no changes in this file.
+
 public enum SarvamAIError: Error, LocalizedError {
     case invalidURL
     case networkError(Error)
