@@ -11,7 +11,7 @@ When the user opens the companion for an article, the app shows:
 - Why the story matters  
 - Tappable topic chips (e.g. “What happens next?”, “Key players”) with short summaries on tap  
 
-**Requirements:** An API key for at least one supported provider. Default is **Groq**; others include Gemini, Claude, OpenAI, and Hugging Face. Keys are supplied via your app (e.g. `ApiKeys.xcconfig` → Info.plist) or Keychain; see Sample App below.
+**Requirements:** An API key for at least one supported provider. Default is **Groq**; others include Gemini, Claude, OpenAI, and Hugging Face. Keys are supplied via your app (e.g. `ApiKeys.xcconfig` → Info.plist); see Sample App below.
 
 ### Quick start
 
@@ -19,7 +19,7 @@ When the user opens the companion for an article, the app shows:
 import SwiftUI
 import NewsCompanionKit
 
-// Config with API key (e.g. from Bundle/Keychain) and optional provider.
+// Config with API key (e.g. from Bundle) and optional provider.
 let config = NewsCompanionKit.Config(
     apiKey: "YOUR_API_KEY",
     provider: .groq  // or .gemini, .claude, .openAI, .huggingFace
@@ -80,7 +80,7 @@ import NewsCompanionKit
 struct ContentView: View {
     @State private var companionURL: URL?
     private var config: NewsCompanionKit.Config? {
-        // Resolve API key for your chosen provider (e.g. from Bundle or Keychain).
+        // Resolve API key for your chosen provider (e.g. from Bundle).
         guard let key = resolveAPIKey() else { return nil }
         return NewsCompanionKit.Config(apiKey: key, provider: .groq)
     }
@@ -156,9 +156,7 @@ AINewsCompanion/
     └── SampleApp/
         ├── SampleAppApp.swift
         ├── ContentView.swift
-        ├── CompanionCache.swift
         ├── CompanionDebug.swift
-        ├── KeychainHelper.swift
         └── ApiKeys.xcconfig.example
 ```
 

@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import NewsCompanionKit
+import SummaryToAudio
 
 // MARK: - Sky News article list (one per category: Home, World, Sports)
 
@@ -35,8 +36,11 @@ private let skyArticleList: [SkyArticle] = [
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     @State private var companionURL: URL?
-    @State private var showKeyEntry = false
     @State private var selectedProvider: AIProvider = Self.savedProvider()
+    @State private var selectedTTSProvider: TTSProvider = Self.savedTTSProvider()
+    @State private var selectedLanguage: SpeechLanguage = .english
+    @State private var showLanguageSelection = false
+    @ObservedObject private var speaker = SummaryToAudio.shared
 
     private static let providerKey = "NewsCompanionSelectedProvider"
 
@@ -54,9 +58,21 @@ struct ContentView: View {
             let trimmed = value.trimmingCharacters(in: .whitespaces)
             if !trimmed.isEmpty, !trimmed.hasPrefix("YOUR_") { return trimmed }
         }
-        if let fromKeychain = KeychainHelper.getAPIKey()?.trimmingCharacters(in: .whitespaces),
-           !fromKeychain.isEmpty {
-            return fromKeychain
+        return nil
+    }
+
+    private var effectiveSarvamAPIKey: String? {
+        if let value = Bundle.main.object(forInfoDictionaryKey: "SARVAM_API_KEY") as? String {
+            let trimmed = value.trimmingCharacters(in: .whitespaces)
+            if !trimmed.isEmpty, !trimmed.hasPrefix("YOUR_") { return trimmed }
+        }
+        return nil
+    }
+
+    private var effectiveElevenLabsAPIKey: String? {
+        if let value = Bundle.main.object(forInfoDictionaryKey: "ELEVENLABS_API_KEY") as? String {
+            let trimmed = value.trimmingCharacters(in: .whitespaces)
+            if !trimmed.isEmpty, !trimmed.hasPrefix("YOUR_") { return trimmed }
         }
         return nil
     }
@@ -67,13 +83,25 @@ struct ContentView: View {
 
     private static func savedProvider() -> AIProvider {
         guard let raw = UserDefaults.standard.string(forKey: providerKey),
-              let provider = AIProvider(rawValue: raw) else { return .groq }
+              let provider = AIProvider(rawValue: raw) else { return .gemini }
+        return provider
+    }
+
+    private static func savedTTSProvider() -> TTSProvider {
+        guard let raw = UserDefaults.standard.string(forKey: "SummaryToAudioSelectedProvider"),
+              let provider = TTSProvider(rawValue: raw) else { return .elevenLabs }
         return provider
     }
 
     private func saveProvider(_ provider: AIProvider) {
         UserDefaults.standard.set(provider.rawValue, forKey: Self.providerKey)
         selectedProvider = provider
+    }
+
+    private func saveTTSProvider(_ provider: TTSProvider) {
+        UserDefaults.standard.set(provider.rawValue, forKey: "SummaryToAudioSelectedProvider")
+        selectedTTSProvider = provider
+        speaker.configure(provider: provider)
     }
 
     private var companionConfig: NewsCompanionKit.Config? {
@@ -93,14 +121,11 @@ struct ContentView: View {
                 .padding(.top, 12)
 
             if effectiveAPIKey == nil {
-                Text("Set your API key to use the AI companion.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                Text("API keys missing. Check ApiKeys.xcconfig.")
+                    .font(.caption)
+                    .foregroundStyle(.red)
                     .multilineTextAlignment(.center)
-                    .padding(.horizontal)
-                Button("Set API key", action: { showKeyEntry = true })
-                    .buttonStyle(.borderedProminent)
-                    .padding(.top, 8)
+                    .padding(.top, 4)
             }
 
             Picker("AI Provider", selection: Binding(get: { selectedProvider }, set: { saveProvider($0) })) {
@@ -113,34 +138,30 @@ struct ContentView: View {
             .padding(.vertical, 12)
 
             List(skyArticleList) { article in
-                HStack(alignment: .top, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(article.category)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Text(article.title)
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                    Button {
-                        companionURL = article.url
-                    } label: {
-                        Image(systemName: "sparkles")
-                            .font(.body)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(effectiveAPIKey == nil)
-                }
-                .padding(.vertical, 4)
+                ArticleRow(
+                    article: article,
+                    isPlaying: speaker.playerManager.isPlaying,
+                    isLoading: speaker.playerManager.isLoading,
+                    isAIEnabled: effectiveAPIKey != nil,
+                    isTTSEnabled: selectedTTSProvider == .sarvam ? effectiveSarvamAPIKey != nil : effectiveElevenLabsAPIKey != nil,
+                    onCompanionTap: { companionURL = article.url },
+                    onPlayTap: { playSummary(for: article.url) },
+                    onLongPress: { showLanguageSelection = true }
+                )
             }
             .listStyle(.insetGrouped)
 
             HStack(spacing: 16) {
-                Button("Change or clear API key", action: { showKeyEntry = true })
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Spacer()
+
+                Picker("TTS Provider", selection: Binding(get: { selectedTTSProvider }, set: { saveTTSProvider($0) })) {
+                    ForEach(TTSProvider.allCases, id: \.self) { provider in
+                        Text(provider.displayName).tag(provider)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+
                 Toggle(isOn: Binding(get: { CompanionDebug.isEnabled }, set: { CompanionDebug.isEnabled = $0 })) {
                     Text("Debug")
                         .font(.caption)
@@ -151,20 +172,6 @@ struct ContentView: View {
             .padding(.bottom, 12)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .sheet(isPresented: $showKeyEntry) {
-            APIKeyEntryView(
-                initialKey: effectiveAPIKey,
-                onSave: { key in
-                    if key.isEmpty {
-                        KeychainHelper.deleteAPIKey()
-                    } else {
-                        _ = KeychainHelper.setAPIKey(key)
-                    }
-                    showKeyEntry = false
-                },
-                onCancel: { showKeyEntry = false }
-            )
-        }
         .sheet(item: Binding(
             get: { companionURL.map(IdentifiableCompanionURL.init) },
             set: { companionURL = $0?.url }
@@ -174,31 +181,136 @@ struct ContentView: View {
                     url: identifiable.url,
                     config: config,
                     generateCompanion: { url in
-                        // New or dynamic URL: first time → API then SwiftData; same URL later → SwiftData only
                         if let cached = CompanionCache.cachedResult(for: url, modelContext: modelContext) {
-                            CompanionDebug.logCacheHit(url: url)
                             return cached
                         }
-                        CompanionDebug.logCacheMiss(url: url)
-                        do {
-                            let result = try await NewsCompanionKit.generate(url: url, config: config)
-                            try CompanionCache.save(result: result, for: url, modelContext: modelContext)
-                            let prefix = String(result.summary.oneLiner.prefix(50))
-                            CompanionDebug.logAPISuccess(url: url, oneLinerPrefix: prefix)
-                            return result
-                        } catch {
-                            CompanionDebug.logAPIFailure(url: url, error: error)
-                            throw error
-                        }
+                        return try await NewsCompanionKit.generate(url: url, config: config)
                     },
                     onDismiss: { companionURL = nil }
                 )
                 .modifier(PresentationDetentsWhenAvailable())
-            } else {
-                MissingKeySheetView(onDismiss: { companionURL = nil }, onSetKey: { companionURL = nil; showKeyEntry = true })
             }
         }
-        .onAppear { }
+        .onAppear {
+            speaker.configure(
+                provider: selectedTTSProvider,
+                elevenLabsKey: effectiveElevenLabsAPIKey,
+                sarvamKey: effectiveSarvamAPIKey
+            )
+        }
+        .overlay {
+            if showLanguageSelection {
+                LanguageSelectionOverlay(selectedLanguage: $selectedLanguage, isPresented: $showLanguageSelection)
+            }
+        }
+    }
+
+    private func playSummary(for url: URL) {
+        if speaker.playerManager.isPlaying {
+            speaker.stop()
+            return
+        }
+
+        guard let cached = CompanionCache.cachedResult(for: url, modelContext: modelContext) else {
+            // If not cached, maybe prompt to open companion first?
+            // For now, just generate summary then play
+            Task {
+                companionURL = url
+            }
+            return
+        }
+
+        Task {
+            let summary = cached.summary
+            let bulletsText = summary.bullets
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+                .map { $0.hasSuffix(".") ? $0 : $0 + "." }
+                .joined(separator: " ")
+            
+            let fullText = "\(summary.oneLiner.trimmingCharacters(in: .whitespacesAndNewlines)) \(bulletsText) Why it matters: \(summary.whyItMatters.trimmingCharacters(in: .whitespacesAndNewlines))"
+            
+            // Cache key: ElevenLabs is English-only so we cache by .english; Sarvam caches per selected language.
+            let effectiveLanguage: SpeechLanguage = selectedTTSProvider == .elevenLabs ? .english : selectedLanguage
+            
+            if let cachedText = TranslationCache.cachedTranslation(for: url, language: effectiveLanguage, modelContext: modelContext) {
+                print("[TTS] translatedText source: CACHE (SwiftData) | url: \(url.absoluteString) | languageCode: \(effectiveLanguage.rawValue) | chars: \(cachedText.count)")
+                CompanionDebug.log("[TTS] translatedText source: CACHE (SwiftData) | languageCode: \(effectiveLanguage.rawValue) | chars: \(cachedText.count)")
+                await speaker.play(text: cachedText, language: selectedLanguage, textIsAlreadyTranslated: true)
+                return
+            }
+
+            var textToSpeak: String
+            if effectiveLanguage == .english {
+                textToSpeak = fullText
+            } else {
+                do {
+                    textToSpeak = try await speaker.translateIfNeeded(text: fullText, language: effectiveLanguage)
+                } catch {
+                    print("ContentView: Translation failed, using original: \(error.localizedDescription)")
+                    textToSpeak = fullText
+                }
+            }
+            // Save generated text per (url, languageCode) so next tap uses cache (any language including English).
+            try? TranslationCache.save(translatedText: textToSpeak, for: url, language: effectiveLanguage, modelContext: modelContext)
+
+            print("[TTS] translatedText source: API RESPONSE (then saved to SwiftData) | url: \(url.absoluteString) | languageCode: \(effectiveLanguage.rawValue) | chars: \(textToSpeak.count)")
+            CompanionDebug.log("[TTS] translatedText source: API RESPONSE | languageCode: \(effectiveLanguage.rawValue) | chars: \(textToSpeak.count) | saved to SwiftData")
+            await speaker.play(text: textToSpeak, language: selectedLanguage, textIsAlreadyTranslated: true)
+        }
+    }
+}
+
+struct ArticleRow: View {
+    let article: SkyArticle
+    let isPlaying: Bool
+    let isLoading: Bool
+    let isAIEnabled: Bool
+    let isTTSEnabled: Bool
+    let onCompanionTap: () -> Void
+    let onPlayTap: () -> Void
+    let onLongPress: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(article.category)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(article.title)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button(action: onCompanionTap) {
+                Image(systemName: "sparkles")
+                    .font(.body)
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(!isAIEnabled)
+
+            ZStack {
+                if isLoading {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Image(systemName: isPlaying ? "stop.fill" : "speaker.wave.2")
+                        .font(.body)
+                }
+            }
+            .padding(8)
+            .background(Color.blue.opacity(0.1))
+            .cornerRadius(8)
+            .onTapGesture {
+                if isTTSEnabled {
+                    onPlayTap()
+                }
+            }
+            .onLongPressGesture(perform: onLongPress)
+            .opacity(isTTSEnabled ? 1.0 : 0.5)
+        }
+        .padding(.vertical, 4)
     }
 }
 
@@ -206,84 +318,10 @@ private extension String {
     var nilIfEmpty: String? { isEmpty ? nil : self }
 }
 
-private struct MissingKeySheetView: View {
-    let onDismiss: () -> Void
-    let onSetKey: () -> Void
-
-    var body: some View {
-        NavigationStack {
-            VStack(spacing: 16) {
-                Text("API key is missing. Add it in ApiKeys.xcconfig or set it below.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                Button("Set API key", action: onSetKey)
-                    .buttonStyle(.borderedProminent)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .navigationTitle("AI Companion")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Done", action: onDismiss)
-                }
-            }
-        }
-    }
-}
 
 private struct IdentifiableCompanionURL: Identifiable {
     let url: URL
     var id: String { url.absoluteString }
-}
-
-// MARK: - API key entry (key never in source or .env)
-
-struct APIKeyEntryView: View {
-    let initialKey: String?
-    let onSave: (String) -> Void
-    let onCancel: () -> Void
-
-    @State private var keyInput: String = ""
-    @FocusState private var keyFocused: Bool
-
-    var body: some View {
-        NavigationStack {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("Your API key is stored only in the device Keychain. It is never saved in the app code or in files.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-
-                SecureField("API key", text: $keyInput)
-                    .textContentType(.password)
-                    .autocapitalization(.none)
-                    .autocorrectionDisabled()
-                    .focused($keyFocused)
-                    .onAppear {
-                        keyInput = initialKey ?? ""
-                        keyFocused = true
-                    }
-
-                Text("Get a key at [Google AI Studio](https://aistudio.google.com/apikey)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .padding()
-            .navigationTitle("API key")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel", action: onCancel)
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save", action: { onSave(keyInput.trimmingCharacters(in: .whitespaces)) })
-                }
-                ToolbarItem(placement: .bottomBar) {
-                    Button("Clear key", role: .destructive, action: { onSave("") })
-                }
-            }
-        }
-    }
 }
 
 private struct PresentationDetentsWhenAvailable: ViewModifier {
@@ -300,6 +338,57 @@ private struct PresentationDetentsWhenAvailable: ViewModifier {
     }
 }
 
-#Preview {
-    ContentView()
+struct LanguageSelectionOverlay: View {
+    @Binding var selectedLanguage: SpeechLanguage
+    @Binding var isPresented: Bool
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.3)
+                .ignoresSafeArea()
+                .onTapGesture { isPresented = false }
+
+            VStack(spacing: 20) {
+                Text("Select Language")
+                    .font(.headline)
+
+                VStack(spacing: 12) {
+                    HStack(spacing: 10) {
+                        chipButton(for: .english)
+                        chipButton(for: .hindi)
+                        chipButton(for: .tamil)
+                    }
+                    HStack(spacing: 10) {
+                        chipButton(for: .telugu)
+                        chipButton(for: .malayalam)
+                        chipButton(for: .gujarati)
+                    }
+                }
+            }
+            .padding(24)
+            .background(Color(.secondarySystemBackground))
+            .cornerRadius(20)
+            .shadow(radius: 20)
+        }
+    }
+
+    private func chipButton(for lang: SpeechLanguage) -> some View {
+        Button {
+            selectedLanguage = lang
+            isPresented = false
+        } label: {
+            Text(lang.displayName)
+                .font(.subheadline)
+                .fontWeight(.medium)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(selectedLanguage == lang ? Color.blue : Color.white)
+                .foregroundStyle(selectedLanguage == lang ? .white : .primary)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20)
+                        .stroke(Color.blue.opacity(0.3), lineWidth: selectedLanguage == lang ? 0 : 1)
+                )
+                .clipShape(Capsule())
+        }
+    }
 }

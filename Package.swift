@@ -9,6 +9,7 @@ let package = Package(
     ],
     products: [
         .library(name: "NewsCompanionKit", targets: ["NewsCompanionKit"]),
+        .library(name: "SummaryToAudio", targets: ["SummaryToAudio"]),
     ],
     dependencies: [
         .package(url: "https://github.com/scinfu/SwiftSoup.git", from: "2.6.0"),
@@ -20,10 +21,20 @@ let package = Package(
             path: "Sources/NewsCompanionKit",
             resources: [.process("Resources")]
         ),
+        .target(
+            name: "SummaryToAudio",
+            dependencies: [],
+            path: "Sources/SummaryToAudio"
+        ),
         .testTarget(
             name: "NewsCompanionKitTests",
             dependencies: ["NewsCompanionKit"],
             path: "Tests/NewsCompanionKitTests"
+        ),
+        .testTarget(
+            name: "SummaryToAudioTests",
+            dependencies: ["SummaryToAudio"],
+            path: "Tests/SummaryToAudioTests"
         )
     ]
 )

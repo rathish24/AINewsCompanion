@@ -1,0 +1,58 @@
+import Foundation
+import AVFoundation
+
+@MainActor
+public final class AudioPlayerManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
+    @Published public private(set) var isPlaying = false
+    @Published public private(set) var isLoading = false
+    @Published public var error: String?
+
+    private var player: AVAudioPlayer?
+
+    public override init() {
+        super.init()
+    }
+
+    public func play(data: Data) {
+        print("AudioPlayerManager: Attempting to play audio data (\(data.count) bytes)")
+        do {
+            isLoading = false
+            
+            // Configure audio session for playback
+            let session = AVAudioSession.sharedInstance()
+            print("AudioPlayerManager: Setting category to .playback")
+            try session.setCategory(.playback, mode: .default, options: [.duckOthers, .defaultToSpeaker])
+            try session.setActive(true)
+            
+            player = try AVAudioPlayer(data: data)
+            player?.delegate = self
+            player?.prepareToPlay()
+            let success = player?.play() ?? false
+            print("AudioPlayerManager: player.play() returned \(success)")
+            if success {
+                isPlaying = true
+            }
+            error = nil
+        } catch {
+            print("AudioPlayerManager ERROR: \(error.localizedDescription)")
+            self.error = error.localizedDescription
+        }
+    }
+
+    public func stop() {
+        player?.stop()
+        isPlaying = false
+    }
+
+    public func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        isPlaying = false
+    }
+
+    public func setLoading(_ loading: Bool) {
+        isLoading = loading
+    }
+    
+    public func setError(_ error: String?) {
+        self.error = error
+    }
+}

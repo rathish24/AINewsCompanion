@@ -10,6 +10,7 @@ xcuserdata/
 *.moved-aside
 *.pbxuser
 !default.pbxuser
+*.xcconfig
 
 # Swift Package Manager
 .build/
