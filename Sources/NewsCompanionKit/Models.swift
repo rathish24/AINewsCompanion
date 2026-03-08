@@ -71,4 +71,17 @@ public struct CompanionResult: Sendable, Codable {
         self.topics = topics
         self.factChecks = factChecks
     }
+
+    /// Single string for TTS: one-liner, bullets, and "Why it matters". Use in App 2 (audio-only, no sheet): `generate(url:config:)` → `result.textForSpeech` → `SummaryToAudio.play(text:...)`.
+    public var textForSpeech: String {
+        let s = summary
+        let bulletsText = s.bullets
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .map { $0.hasSuffix(".") ? $0 : $0 + "." }
+            .joined(separator: " ")
+        let one = s.oneLiner.trimmingCharacters(in: .whitespacesAndNewlines)
+        let why = s.whyItMatters.trimmingCharacters(in: .whitespacesAndNewlines)
+        return "\(one) \(bulletsText) Why it matters: \(why)"
+    }
 }

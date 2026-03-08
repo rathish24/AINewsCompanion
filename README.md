@@ -106,6 +106,9 @@ struct ContentView: View {
 - **`NewsCompanionKit.generate(url:config:) async throws -> CompanionResult`**  
   Fetches the URL, extracts article text, calls the configured AI provider, and returns a structured result (summary, topics, fact checks). Use for custom UI or caching.
 
+- **`NewsCompanionKit.resultFetcher(config:cache:) -> (URL) async throws -> CompanionResult`**  
+  Returns a closure that gets a result for a URL (from optional cache or by calling `generate`). Use in App 2 (audio-only) with `result.textForSpeech` and `SummaryToAudio.shared.play(text:...)`. Cache is optional; implement `CompanionResultCaching` or pass `nil`.
+
 - **`CompanionSheetView(result:loading:error:onTopicTap:onTelemetry:)`**  
   SwiftUI view that displays the companion result (or loading/error). Used by the modifier; use directly if you manage state yourself.
 
@@ -118,7 +121,160 @@ The **SampleApp** demonstrates NewsCompanionKit with a list of sample articles a
 
 1. Open `SampleApp/SampleApp.xcodeproj` in Xcode.
 2. Copy `SampleApp/ApiKeys.xcconfig.example` to `ApiKeys.xcconfig` and add your API keys (e.g. `GROQ_API_KEY = "your-groq-key"`). The project injects these into Info.plist at build time.
-3. Run the app, pick a provider (default: Groq), then tap an article and open the AI companion. The sheet shows loading, then the summary, bullets, “why it matters,” and topic chips; tap a chip to see its summary.
+3. Run the app, pick a provider (default: Groq), then use the **App 1** and **App 2** tabs to verify each flow: **App 1** — tap **AI Companion** to open the summary sheet (no audio); **App 2** — tap **Audio** to fetch summary and play TTS (no sheet).
+
+## Two app scenarios
+
+| App | Behavior | What to use |
+|-----|----------|-------------|
+| **App 1** | Show summary in a **sheet** (user reads). | **NewsCompanionKit** only. Present `CompanionSheetView` or `.companionSheet(url:config:)`. No SummaryToAudio. |
+| **App 2** | **Play audio only** — no summary sheet. | **NewsCompanionKit** + **SummaryToAudio**. Use `resultFetcher(config:cache:)` (cache optional), then `result.textForSpeech` → `SummaryToAudio.shared.play(text:effectiveLanguage:textIsAlreadyTranslated:)`. |
+
+- **App 1**: User taps → sheet opens → summary shown. No audio.
+- **App 2**: User taps play → get result (from cache or fetch) → `result.textForSpeech` → audio plays. No sheet.
+
+---
+
+## Public API contract (App 1 and App 2)
+
+Use this as the implementation reference for each app. Follow the contract and sample code so behavior stays consistent.
+
+### App 1 — Summary only (sheet)
+
+**Dependencies:** **NewsCompanionKit** only. Do not add SummaryToAudio.
+
+**Contract:**
+
+| What | API |
+|------|-----|
+| Config | `NewsCompanionKit.Config(apiKey:provider:...)` |
+| Show summary | `CompanionSheetView(url:config:generateCompanion:onDismiss:onCompanionLoaded:)` or `.companionSheet(url:config:)` |
+| Optional: cache-first fetch | In `generateCompanion`, return cached result if valid, else `NewsCompanionKit.generate(url:url, config:config)` |
+| Optional: persist when loaded | In `onCompanionLoaded`, save the `CompanionResult` (e.g. to your cache by URL) |
+
+**Flow:** User taps row → set URL → present sheet. Sheet loads (cache or generate) → show summary. No audio.
+
+**Sample code (App 1):**
+
+```swift
+import SwiftUI
+import NewsCompanionKit
+
+struct App1CompanionView: View {
+    @State private var companionURL: URL?  // URL to show in sheet
+    private let config: NewsCompanionKit.Config  // from your app (e.g. API key + provider)
+
+    var body: some View {
+        List(articles) { article in
+            Button(article.title) {
+                companionURL = article.url
+            }
+        }
+        .sheet(item: Binding(
+            get: { companionURL.map { IdentifiableURL(url: $0) } },
+            set: { companionURL = $0?.url }
+        )) { item in
+            CompanionSheetView(
+                url: item.url,
+                config: config,
+                generateCompanion: { url in
+                    // Optional: return cached result if you have one, else fetch
+                    if let cached = myCache.cachedResult(for: url) { return cached }
+                    return try await NewsCompanionKit.generate(url: url, config: config)
+                },
+                onDismiss: { companionURL = nil },
+                onCompanionLoaded: { result in
+                    myCache.save(result: result, for: item.url)
+                }
+            )
+        }
+    }
+}
+
+private struct IdentifiableURL: Identifiable {
+    let url: URL
+    var id: String { url.absoluteString }
+}
+
+// If you don't use a cache, omit generateCompanion and onCompanionLoaded:
+// CompanionSheetView(url: item.url, config: config, onDismiss: { companionURL = nil })
+```
+
+---
+
+### App 2 — Audio only (no sheet)
+
+**Dependencies:** **NewsCompanionKit** + **SummaryToAudio**.
+
+**Contract:**
+
+| What | API |
+|------|-----|
+| Config | `NewsCompanionKit.Config(apiKey:provider:...)` |
+| Get result for URL | `NewsCompanionKit.resultFetcher(config:cache:)` → call returned closure with `url` |
+| Text for TTS | `CompanionResult.textForSpeech` |
+| Play audio | `SummaryToAudio.shared.configure(...)` once; then `SummaryToAudio.shared.play(text:effectiveLanguage:textIsAlreadyTranslated:)` |
+| Optional: cache | Implement `NewsCompanionKit.CompanionResultCaching` and pass to `resultFetcher(config:cache:)`; or pass `nil` |
+
+**Flow:** User taps play → get result (cache or `resultFetcher`) → `result.textForSpeech` → `play(text:...)`. No sheet.
+
+**Sample code (App 2):**
+
+```swift
+import SwiftUI
+import NewsCompanionKit
+import SummaryToAudio
+
+struct App2AudioView: View {
+    private let config: NewsCompanionKit.Config  // from your app
+    private let cache: (any NewsCompanionKit.CompanionResultCaching)?  // or nil for no cache
+
+    var body: some View {
+        List(articles) { article in
+            HStack {
+                Text(article.title)
+                Spacer()
+                Button("Play") {
+                    Task { await playSummary(for: article.url) }
+                }
+            }
+        }
+        .onAppear {
+            SummaryToAudio.shared.configure(
+                provider: .elevenLabs,
+                elevenLabsKey: yourElevenLabsKey  // or sarvamKey for Sarvam
+            )
+        }
+    }
+
+    private func playSummary(for url: URL) async {
+        let fetch = NewsCompanionKit.resultFetcher(config: config, cache: cache)
+        do {
+            let result = try await fetch(url)
+            await SummaryToAudio.shared.play(
+                text: result.textForSpeech,
+                effectiveLanguage: .elevenLabs(.english),  // or .sarvam(.tamil), etc.
+                textIsAlreadyTranslated: false
+            )
+        } catch {
+            // show error
+        }
+    }
+}
+```
+
+**Minimal App 2 (English only, no cache):** Omit cache and use `resultFetcher(config: config, cache: nil)`. Add loading state and translation only if you need them.
+
+---
+
+### Quick reference
+
+| App | Entry point | No sheet? | No audio? |
+|-----|-------------|-----------|-----------|
+| App 1 | `CompanionSheetView` or `.companionSheet(url:config:)` | — | ✓ |
+| App 2 | `resultFetcher(config:cache:)` → `result.textForSpeech` → `SummaryToAudio.shared.play(...)` | ✓ | — |
+
+**Design notes:** Two entry points (sheet vs fetch+play) keep App 1 and App 2 independent. Config and optional cache are injected so you can test or swap providers/storage. `CompanionResultCaching` keeps the library storage-agnostic; `textForSpeech` is the single source for TTS text.
 
 ## SummaryToAudio & TTS
 

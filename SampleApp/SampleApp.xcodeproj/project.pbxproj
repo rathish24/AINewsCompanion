@@ -14,6 +14,9 @@
 		A1B1C1D10006 /* CompanionCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B1C1D20006 /* CompanionCache.swift */; };
 		A1B1C1D10007 /* CompanionDebug.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B1C1D20007 /* CompanionDebug.swift */; };
 		A1B1C1D10009 /* SummaryPlaybackController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B1C1D20009 /* SummaryPlaybackController.swift */; };
+		A1B1C1D10010 /* SharedAppData.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B1C1D20010 /* SharedAppData.swift */; };
+		A1B1C1D10011 /* App1ListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B1C1D20011 /* App1ListView.swift */; };
+		A1B1C1D10012 /* App2ListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B1C1D20012 /* App2ListView.swift */; };
 		BB591B612F5B4EAE00CEC212 /* NewsCompanionKit in Frameworks */ = {isa = PBXBuildFile; productRef = A1B1C1D50002 /* NewsCompanionKit */; };
 		A1B1C1D10008 /* SummaryToAudio in Frameworks */ = {isa = PBXBuildFile; productRef = A1B1C1D50003 /* SummaryToAudio */; };
 /* End PBXBuildFile section */
@@ -28,6 +31,9 @@
 		A1B1C1D20006 /* CompanionCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionCache.swift; sourceTree = "<group>"; };
 		A1B1C1D20007 /* CompanionDebug.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionDebug.swift; sourceTree = "<group>"; };
 		A1B1C1D20009 /* SummaryPlaybackController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryPlaybackController.swift; sourceTree = "<group>"; };
+		A1B1C1D20010 /* SharedAppData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedAppData.swift; sourceTree = "<group>"; };
+		A1B1C1D20011 /* App1ListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App1ListView.swift; sourceTree = "<group>"; };
+		A1B1C1D20012 /* App2ListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App2ListView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -57,7 +63,9 @@
 			children = (
 				A1B1C1D20001 /* SampleAppApp.swift */,
 				A1B1C1D20002 /* ContentView.swift */,
-
+				A1B1C1D20010 /* SharedAppData.swift */,
+				A1B1C1D20011 /* App1ListView.swift */,
+				A1B1C1D20012 /* App2ListView.swift */,
 				A1B1C1D20006 /* CompanionCache.swift */,
 				A1B1C1D20007 /* CompanionDebug.swift */,
 				A1B1C1D20009 /* SummaryPlaybackController.swift */,
@@ -170,7 +178,9 @@
 			files = (
 				A1B1C1D10001 /* SampleAppApp.swift in Sources */,
 				A1B1C1D10002 /* ContentView.swift in Sources */,
-
+				A1B1C1D10010 /* SharedAppData.swift in Sources */,
+				A1B1C1D10011 /* App1ListView.swift in Sources */,
+				A1B1C1D10012 /* App2ListView.swift in Sources */,
 				A1B1C1D10006 /* CompanionCache.swift in Sources */,
 				A1B1C1D10007 /* CompanionDebug.swift in Sources */,
 				A1B1C1D10009 /* SummaryPlaybackController.swift in Sources */,

@@ -127,6 +127,28 @@ public enum NewsCompanionKit {
             throw error
         }
     }
+
+    // MARK: - App 2 (audio-only, no sheet): result fetcher with optional cache
+
+    /// Optional cache for companion results. Implement this (e.g. with SwiftData, UserDefaults, or in-memory) and pass to `resultFetcher(config:cache:)` so App 2 avoids refetching. Pass `nil` for no caching.
+    public protocol CompanionResultCaching: AnyObject {
+        func cachedResult(for url: URL) async -> CompanionResult?
+        func save(result: CompanionResult, for url: URL) async
+    }
+
+    /// Returns a closure that fetches a companion result for a URL: uses cache when provided and returns a cached result when available, otherwise calls `generate(url:config:)` and optionally saves. Use in App 2: `let result = try await resultFetcher(config: config, cache: myCache)(url)` then `SummaryToAudio.shared.play(text: result.textForSpeech, ...)`.
+    public static func resultFetcher(config: Config, cache: (any CompanionResultCaching)?) -> (URL) async throws -> CompanionResult {
+        { url in
+            if let cache = cache, let cached = await cache.cachedResult(for: url) {
+                return cached
+            }
+            let result = try await generate(url: url, config: config)
+            if let cache = cache {
+                await cache.save(result: result, for: url)
+            }
+            return result
+        }
+    }
 }
 
 public enum NewsCompanionKitError: Error {

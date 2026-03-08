@@ -20,6 +20,26 @@ final class CachedCompanionResult {
     init() {}
 }
 
+// MARK: - App 2 cache adapter (CompanionResultCaching)
+
+/// Bridges SwiftData-backed CompanionCache to NewsCompanionKit.CompanionResultCaching so App 2 can use `resultFetcher(config:cache:)`.
+@MainActor
+final class CompanionCacheAdapter: NewsCompanionKit.CompanionResultCaching {
+    private let modelContext: ModelContext
+
+    init(modelContext: ModelContext) {
+        self.modelContext = modelContext
+    }
+
+    func cachedResult(for url: URL) async -> CompanionResult? {
+        CompanionCache.cachedResult(for: url, modelContext: modelContext)
+    }
+
+    func save(result: CompanionResult, for url: URL) async {
+        try? CompanionCache.save(result: result, for: url, modelContext: modelContext)
+    }
+}
+
 enum CompanionCache {
     /// Bump this whenever the prompt or output contract changes so stale cache is ignored.
     static let promptVersion = 5

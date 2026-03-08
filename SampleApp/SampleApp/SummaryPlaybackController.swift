@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import NewsCompanionKit
 import SummaryToAudio
 
 /// Owns audio playback state and logic: which article is playing, play/pause, text cache (SwiftData), and completion.
@@ -58,11 +59,14 @@ final class SummaryPlaybackController: ObservableObject {
         preparingURL = nil
     }
 
+    /// - Parameters:
+    ///   - fetchSummaryWhenCacheMisses: When non-nil, a cache miss will fetch summary with this closure, save to cache, and play audio (no sheet). When nil, a cache miss calls `onOpenCompanion(url)` (open companion sheet). Use the former for "audio-only" or "combined" apps that have a companion config at init.
     func togglePlayPause(
         for url: URL,
         modelContext: ModelContext,
         effectiveLanguage: EffectiveTTSLanguage,
-        onOpenCompanion: (URL) -> Void
+        onOpenCompanion: (URL) -> Void,
+        fetchSummaryWhenCacheMisses: ((URL) async throws -> CompanionResult)? = nil
     ) {
         if isPlaying(for: url) {
             speaker.pause()
@@ -76,100 +80,129 @@ final class SummaryPlaybackController: ObservableObject {
             speaker.stop()
             playingURL = nil
         }
-        playSummary(for: url, modelContext: modelContext, effectiveLanguage: effectiveLanguage, onOpenCompanion: onOpenCompanion)
+        playSummary(for: url, modelContext: modelContext, effectiveLanguage: effectiveLanguage, onOpenCompanion: onOpenCompanion, fetchSummaryWhenCacheMisses: fetchSummaryWhenCacheMisses)
     }
 
     func playSummary(
         for url: URL,
         modelContext: ModelContext,
         effectiveLanguage: EffectiveTTSLanguage,
-        onOpenCompanion: (URL) -> Void
+        onOpenCompanion: (URL) -> Void,
+        fetchSummaryWhenCacheMisses: ((URL) async throws -> CompanionResult)? = nil
     ) {
-        guard let cached = CompanionCache.cachedResult(for: url, modelContext: modelContext) else {
-            onOpenCompanion(url)
+        if let cached = CompanionCache.cachedResult(for: url, modelContext: modelContext) {
+            playingURL = url
+            preparingURL = url
+            playTask?.cancel()
+            playGeneration += 1
+            let generation = playGeneration
+            playTask = Task { @MainActor in
+                defer {
+                    preparingURL = nil
+                    if playGeneration == generation { self.playTask = nil }
+                }
+                speaker.playerManager.setError(nil)
+                await playCachedSummaryAsync(url: url, cached: cached, modelContext: modelContext, effectiveLanguage: effectiveLanguage)
+            }
             return
         }
-
-        playingURL = url
-        preparingURL = url
-        let langKey = effectiveLanguage.cacheKey  // Sarvam: en-IN, ta-IN, etc. ElevenLabs: en, fr, etc.
-
-        playTask?.cancel()
-        playGeneration += 1
-        let generation = playGeneration
-        playTask = Task { @MainActor in
-            defer {
-                preparingURL = nil
-                if playGeneration == generation { playTask = nil }
-            }
-            speaker.playerManager.setError(nil)
-            let summary = cached.summary
-            let bulletsText = summary.bullets
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty }
-                .map { $0.hasSuffix(".") ? $0 : $0 + "." }
-                .joined(separator: " ")
-
-            let fullText = "\(summary.oneLiner.trimmingCharacters(in: .whitespacesAndNewlines)) \(bulletsText) Why it matters: \(summary.whyItMatters.trimmingCharacters(in: .whitespacesAndNewlines))"
-
-            if let cachedText = TranslationCache.cachedTranslation(for: url, languageCode: langKey, modelContext: modelContext) {
-                // For non-English: avoid using cache if it's actually untranslated English (stale).
-                let useCached: Bool
-                if !effectiveLanguage.isEnglish {
-                    let cachedTrimmed = cachedText.trimmingCharacters(in: .whitespacesAndNewlines)
-                    let sourceTrimmed = fullText.trimmingCharacters(in: .whitespacesAndNewlines)
-                    useCached = cachedTrimmed != sourceTrimmed && !cachedTrimmed.isEmpty
-                    if !useCached {
-                        TranslationCache.delete(url: url, languageCode: langKey, modelContext: modelContext)
-                    }
-                } else {
-                    useCached = true
+        // Cache miss: either fetch in background and play (audio-only/combined), or open companion sheet.
+        if let fetch = fetchSummaryWhenCacheMisses {
+            playingURL = url
+            preparingURL = url
+            playTask?.cancel()
+            playGeneration += 1
+            let generation = playGeneration
+            playTask = Task { @MainActor in
+                defer {
+                    preparingURL = nil
+                    if playGeneration == generation { self.playTask = nil }
                 }
-                if useCached {
-                    print("[TTS] translatedText source: CACHE (SwiftData) | url: \(url.absoluteString) | languageCode: \(langKey) | chars: \(cachedText.count)")
-                    CompanionDebug.log("[TTS] translatedText source: CACHE (SwiftData) | languageCode: \(langKey) | chars: \(cachedText.count)")
-                    if !Task.isCancelled && playingURL == url {
-                        await speaker.play(text: cachedText, effectiveLanguage: effectiveLanguage, textIsAlreadyTranslated: true)
-                    }
-                    return
-                }
-            }
-
-            var textToSpeak: String
-            var effectiveForPlay = effectiveLanguage
-            var translationSucceeded = true
-            if effectiveLanguage.isEnglish {
-                textToSpeak = fullText
-            } else {
+                speaker.playerManager.setError(nil)
                 do {
-                    textToSpeak = try await speaker.translateIfNeeded(text: fullText, effectiveLanguage: effectiveLanguage)
-                } catch {
-                    // Translation failed: use default English from cache or from response. Play in English (provider-specific cache key).
-                    print("SummaryPlaybackController: Translation failed, using default English: \(error.localizedDescription)")
-                    speaker.playerManager.setError(error.localizedDescription.isEmpty ? "Translation failed. Playing in English." : error.localizedDescription)
-                    let englishCacheKey = effectiveLanguage.englishCacheKeyForFallback
-                    if let cachedEnglish = TranslationCache.cachedTranslation(for: url, languageCode: englishCacheKey, modelContext: modelContext), !cachedEnglish.isEmpty {
-                        textToSpeak = cachedEnglish
-                        print("[TTS] Fallback: using cached English | url: \(url.absoluteString) | key: \(englishCacheKey) | chars: \(textToSpeak.count)")
-                    } else {
-                        textToSpeak = fullText
-                        print("[TTS] Fallback: using source text (English) | url: \(url.absoluteString) | chars: \(textToSpeak.count)")
+                    let result = try await fetch(url)
+                    try CompanionCache.save(result: result, for: url, modelContext: modelContext)
+                    if !Task.isCancelled, playingURL == url, let cached = CompanionCache.cachedResult(for: url, modelContext: modelContext) {
+                        await playCachedSummaryAsync(url: url, cached: cached, modelContext: modelContext, effectiveLanguage: effectiveLanguage)
                     }
-                    effectiveForPlay = effectiveLanguage.provider == .sarvam ? .sarvam(.english) : .elevenLabs(.english)
-                    translationSucceeded = false
+                } catch {
+                    if !Task.isCancelled, playingURL == url {
+                        speaker.playerManager.setError(error.localizedDescription)
+                        speaker.playerManager.setLoading(false)
+                    }
+                    preparingURL = nil
+                }
+            }
+            return
+        }
+        onOpenCompanion(url)
+    }
+
+    @MainActor
+    private func playCachedSummaryAsync(
+        url: URL,
+        cached: CompanionResult,
+        modelContext: ModelContext,
+        effectiveLanguage: EffectiveTTSLanguage
+    ) async {
+        let fullText = cached.textForSpeech
+        let langKey = effectiveLanguage.cacheKey
+
+        if let cachedText = TranslationCache.cachedTranslation(for: url, languageCode: langKey, modelContext: modelContext) {
+            let useCached: Bool
+            if !effectiveLanguage.isEnglish {
+                let cachedTrimmed = cachedText.trimmingCharacters(in: .whitespacesAndNewlines)
+                let sourceTrimmed = fullText.trimmingCharacters(in: .whitespacesAndNewlines)
+                useCached = cachedTrimmed != sourceTrimmed && !cachedTrimmed.isEmpty
+                if !useCached {
                     TranslationCache.delete(url: url, languageCode: langKey, modelContext: modelContext)
                 }
-            }
-            if translationSucceeded {
-                try? TranslationCache.save(translatedText: textToSpeak, for: url, languageCode: langKey, modelContext: modelContext)
-                print("[TTS] translatedText source: API RESPONSE (then saved to SwiftData) | url: \(url.absoluteString) | languageCode: \(langKey) | chars: \(textToSpeak.count)")
-                CompanionDebug.log("[TTS] translatedText source: API RESPONSE | languageCode: \(langKey) | chars: \(textToSpeak.count) | saved to SwiftData")
             } else {
-                print("[TTS] translatedText NOT saved (translation failed) | languageCode: \(langKey)")
+                useCached = true
             }
-            if !Task.isCancelled && playingURL == url {
-                await speaker.play(text: textToSpeak, effectiveLanguage: effectiveForPlay, textIsAlreadyTranslated: true)
+            if useCached {
+                print("[TTS] translatedText source: CACHE (SwiftData) | url: \(url.absoluteString) | languageCode: \(langKey) | chars: \(cachedText.count)")
+                CompanionDebug.log("[TTS] translatedText source: CACHE (SwiftData) | languageCode: \(langKey) | chars: \(cachedText.count)")
+                if !Task.isCancelled && playingURL == url {
+                    await speaker.play(text: cachedText, effectiveLanguage: effectiveLanguage, textIsAlreadyTranslated: true)
+                }
+                return
             }
+        }
+
+        var textToSpeak: String
+        var effectiveForPlay = effectiveLanguage
+        var translationSucceeded = true
+        if effectiveLanguage.isEnglish {
+            textToSpeak = fullText
+        } else {
+            do {
+                textToSpeak = try await speaker.translateIfNeeded(text: fullText, effectiveLanguage: effectiveLanguage)
+            } catch {
+                print("SummaryPlaybackController: Translation failed, using default English: \(error.localizedDescription)")
+                speaker.playerManager.setError(error.localizedDescription.isEmpty ? "Translation failed. Playing in English." : error.localizedDescription)
+                let englishCacheKey = effectiveLanguage.englishCacheKeyForFallback
+                if let cachedEnglish = TranslationCache.cachedTranslation(for: url, languageCode: englishCacheKey, modelContext: modelContext), !cachedEnglish.isEmpty {
+                    textToSpeak = cachedEnglish
+                    print("[TTS] Fallback: using cached English | url: \(url.absoluteString) | key: \(englishCacheKey) | chars: \(textToSpeak.count)")
+                } else {
+                    textToSpeak = fullText
+                    print("[TTS] Fallback: using source text (English) | url: \(url.absoluteString) | chars: \(textToSpeak.count)")
+                }
+                effectiveForPlay = effectiveLanguage.provider == .sarvam ? .sarvam(.english) : .elevenLabs(.english)
+                translationSucceeded = false
+                TranslationCache.delete(url: url, languageCode: langKey, modelContext: modelContext)
+            }
+        }
+        if translationSucceeded {
+            try? TranslationCache.save(translatedText: textToSpeak, for: url, languageCode: langKey, modelContext: modelContext)
+            print("[TTS] translatedText source: API RESPONSE (then saved to SwiftData) | url: \(url.absoluteString) | languageCode: \(langKey) | chars: \(textToSpeak.count)")
+            CompanionDebug.log("[TTS] translatedText source: API RESPONSE | languageCode: \(langKey) | chars: \(textToSpeak.count) | saved to SwiftData")
+        } else {
+            print("[TTS] translatedText NOT saved (translation failed) | languageCode: \(langKey)")
+        }
+        if !Task.isCancelled && playingURL == url {
+            await speaker.play(text: textToSpeak, effectiveLanguage: effectiveForPlay, textIsAlreadyTranslated: true)
         }
     }
 }
