@@ -115,6 +115,8 @@ struct ContentView: View {
     private func saveTTSProvider(_ provider: TTSProvider) {
         UserDefaults.standard.set(provider.rawValue, forKey: "SummaryToAudioSelectedProvider")
         selectedTTSProvider = provider
+        // Stop current playback so old client's audio (e.g. Sarvam Tamil) does not keep playing after switching to ElevenLabs.
+        speaker.stop()
         speaker.clearReplayCache()
         speaker.configure(provider: provider, sarvamLanguage: selectedSarvamLanguage, elevenLabsLanguage: selectedElevenLabsLanguage)
     }
@@ -246,7 +248,15 @@ struct ContentView: View {
         }
         .onChange(of: selectedProvider) { _, _ in setElevenLabsTranslatorIfNeeded() }
         .onChange(of: selectedTTSProvider) { _, _ in setElevenLabsTranslatorIfNeeded() }
-        .onChange(of: selectedElevenLabsLanguage) { _, _ in setElevenLabsTranslatorIfNeeded() }
+        .onChange(of: selectedElevenLabsLanguage) { _, newLang in
+            setElevenLabsTranslatorIfNeeded()
+            speaker.clearReplayCache()
+            speaker.configure(provider: selectedTTSProvider, sarvamLanguage: selectedSarvamLanguage, elevenLabsLanguage: newLang)
+        }
+        .onChange(of: selectedSarvamLanguage) { _, newLang in
+            speaker.clearReplayCache()
+            speaker.configure(provider: selectedTTSProvider, sarvamLanguage: newLang, elevenLabsLanguage: selectedElevenLabsLanguage)
+        }
         .overlay {
             if showLanguageSelection {
                 LanguageSelectionOverlay(

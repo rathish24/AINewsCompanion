@@ -47,6 +47,7 @@ public final class SummaryToAudio: ObservableObject {
     ) {
         if let provider = provider {
             if config.provider != provider {
+                playerManager.stop()
                 clearReplayCache()
             }
             config.provider = provider

@@ -19,6 +19,8 @@ public final class AudioPlayerManager: NSObject, ObservableObject, AVAudioPlayer
 
     public func play(data: Data) {
         print("AudioPlayerManager: Attempting to play audio data (\(data.count) bytes)")
+        // Stop any current playback so the previous client's audio (e.g. Sarvam) never keeps playing when switching to another (e.g. ElevenLabs).
+        stop()
         do {
             isLoading = false
             isPaused = false

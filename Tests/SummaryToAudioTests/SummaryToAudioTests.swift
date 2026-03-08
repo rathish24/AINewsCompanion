@@ -72,4 +72,143 @@ final class SummaryToAudioTests: XCTestCase {
         manager.setError("Test Error")
         XCTAssertEqual(manager.error, "Test Error")
     }
+
+    // MARK: - Provider + language → correct TTS language (bug: switched to Sarvam + Tamil still played English)
+
+    /// After "switching" to Sarvam and selecting Tamil, effective language must be Sarvam Tamil so playback uses Tamil.
+    func testSarvamProviderWithTamilUsesTamilLanguage() {
+        let config = SpeechConfig(provider: .sarvam, sarvamLanguage: .tamil, elevenLabsLanguage: .english)
+        let effective = config.effectiveLanguage()
+        guard case .sarvam(let lang) = effective else {
+            XCTFail("Expected .sarvam(lang), got \(effective)")
+            return
+        }
+        XCTAssertEqual(lang, .tamil, "Sarvam with selected Tamil must use Tamil for TTS")
+        XCTAssertEqual(effective.cacheKey, "ta-IN")
+    }
+
+    /// After "switching" to Sarvam and selecting Hindi, effective language must be Sarvam Hindi.
+    func testSarvamProviderWithHindiUsesHindiLanguage() {
+        let config = SpeechConfig(provider: .sarvam, sarvamLanguage: .hindi, elevenLabsLanguage: .english)
+        let effective = config.effectiveLanguage()
+        guard case .sarvam(let lang) = effective else {
+            XCTFail("Expected .sarvam(lang), got \(effective)")
+            return
+        }
+        XCTAssertEqual(lang, .hindi)
+        XCTAssertEqual(effective.cacheKey, "hi-IN")
+    }
+
+    /// After "switching" to ElevenLabs and selecting French, effective language must be ElevenLabs French.
+    func testElevenLabsProviderWithFrenchUsesFrenchLanguage() {
+        let config = SpeechConfig(provider: .elevenLabs, sarvamLanguage: .english, elevenLabsLanguage: .french)
+        let effective = config.effectiveLanguage()
+        guard case .elevenLabs(let lang) = effective else {
+            XCTFail("Expected .elevenLabs(lang), got \(effective)")
+            return
+        }
+        XCTAssertEqual(lang, .french)
+        XCTAssertEqual(effective.cacheKey, "fr")
+    }
+
+    /// Simulates UI: user was on ElevenLabs, switched to Sarvam, then selected Tamil. Effective TTS language must be Sarvam Tamil.
+    func testSwitchToSarvamAndSelectTamil_PlayUsesTamil() {
+        let effectiveFromUI = EffectiveTTSLanguage.sarvam(.tamil)
+        XCTAssertEqual(effectiveFromUI.provider, .sarvam)
+        XCTAssertEqual(effectiveFromUI.cacheKey, "ta-IN")
+        if case .sarvam(let lang) = effectiveFromUI {
+            XCTAssertEqual(lang, .tamil)
+        } else {
+            XCTFail("Effective language must be .sarvam(.tamil) when Sarvam tab and Tamil selected")
+        }
+    }
+
+    /// Simulates UI: user was on Sarvam, switched to ElevenLabs, then selected Japanese. Effective TTS language must be ElevenLabs Japanese.
+    func testSwitchToElevenLabsAndSelectJapanese_PlayUsesJapanese() {
+        let effectiveFromUI = EffectiveTTSLanguage.elevenLabs(.japanese)
+        XCTAssertEqual(effectiveFromUI.provider, .elevenLabs)
+        XCTAssertEqual(effectiveFromUI.cacheKey, "ja")
+        if case .elevenLabs(let lang) = effectiveFromUI {
+            XCTAssertEqual(lang, .japanese)
+        } else {
+            XCTFail("Effective language must be .elevenLabs(.japanese) when ElevenLabs tab and Japanese selected")
+        }
+    }
+
+    /// For any Sarvam language selection, config.effectiveLanguage() returns that language (play will use it).
+    func testSarvamProvider_EveryLanguageSelection_EffectiveLanguageMatches() {
+        for sarvamLang in SpeechLanguage.allCases {
+            let config = SpeechConfig(provider: .sarvam, sarvamLanguage: sarvamLang, elevenLabsLanguage: .english)
+            let effective = config.effectiveLanguage()
+            guard case .sarvam(let lang) = effective else {
+                XCTFail("Sarvam config must yield .sarvam(lang), got \(effective) for \(sarvamLang)")
+                return
+            }
+            XCTAssertEqual(lang, sarvamLang, "Sarvam with \(sarvamLang) must use \(sarvamLang) for TTS")
+            XCTAssertEqual(effective.cacheKey, sarvamLang.languageCode)
+        }
+    }
+
+    /// For any ElevenLabs language selection, config.effectiveLanguage() returns that language (play will use it).
+    func testElevenLabsProvider_EveryLanguageSelection_EffectiveLanguageMatches() {
+        for elevenLang in ElevenLabsLanguage.allCases {
+            let config = SpeechConfig(provider: .elevenLabs, sarvamLanguage: .english, elevenLabsLanguage: elevenLang)
+            let effective = config.effectiveLanguage()
+            guard case .elevenLabs(let lang) = effective else {
+                XCTFail("ElevenLabs config must yield .elevenLabs(lang), got \(effective) for \(elevenLang)")
+                return
+            }
+            XCTAssertEqual(lang, elevenLang, "ElevenLabs with \(elevenLang) must use \(elevenLang) for TTS")
+            XCTAssertEqual(effective.cacheKey, elevenLang.languageCode)
+        }
+    }
+
+    // MARK: - Client (provider) change: play must use new client's language (bug: Sarvam audio kept playing after switch to ElevenLabs)
+
+    /// After switching client from Sarvam to ElevenLabs, next play must use ElevenLabs (e.g. English), not Sarvam Tamil.
+    func testClientChangeFromSarvamToElevenLabs_PlayUsesElevenLabsLanguage() {
+        var config = SpeechConfig(provider: .sarvam, sarvamLanguage: .tamil, elevenLabsLanguage: .english)
+        XCTAssertEqual(config.effectiveLanguage().provider, .sarvam)
+        if case .sarvam(let lang) = config.effectiveLanguage() { XCTAssertEqual(lang, .tamil) }
+
+        config.provider = .elevenLabs
+        let effective = config.effectiveLanguage()
+        XCTAssertEqual(effective.provider, .elevenLabs, "After switching to ElevenLabs, play must use ElevenLabs client")
+        guard case .elevenLabs(let lang) = effective else {
+            XCTFail("Effective language must be .elevenLabs(lang) after provider switch")
+            return
+        }
+        XCTAssertEqual(lang, .english)
+        XCTAssertEqual(effective.cacheKey, "en")
+    }
+
+    /// After switching client from ElevenLabs to Sarvam, next play must use Sarvam (e.g. Tamil), not ElevenLabs.
+    func testClientChangeFromElevenLabsToSarvam_PlayUsesSarvamLanguage() {
+        var config = SpeechConfig(provider: .elevenLabs, sarvamLanguage: .tamil, elevenLabsLanguage: .french)
+        XCTAssertEqual(config.effectiveLanguage().provider, .elevenLabs)
+
+        config.provider = .sarvam
+        let effective = config.effectiveLanguage()
+        XCTAssertEqual(effective.provider, .sarvam, "After switching to Sarvam, play must use Sarvam client")
+        guard case .sarvam(let lang) = effective else {
+            XCTFail("Effective language must be .sarvam(lang) after provider switch")
+            return
+        }
+        XCTAssertEqual(lang, .tamil)
+        XCTAssertEqual(effective.cacheKey, "ta-IN")
+    }
+
+    /// When client is changed, effective language must be the new client's selected language (ensures replay cache clear + stop are used so play uses new audio).
+    func testClientChange_EffectiveLanguageIsNewClientLanguage() {
+        // Sarvam Tamil → switch to ElevenLabs German
+        let configAfterSwitch = SpeechConfig(provider: .elevenLabs, sarvamLanguage: .tamil, elevenLabsLanguage: .german)
+        let effective = configAfterSwitch.effectiveLanguage()
+        XCTAssertEqual(effective.provider, .elevenLabs)
+        if case .elevenLabs(let lang) = effective {
+            XCTAssertEqual(lang, .german)
+            XCTAssertEqual(effective.cacheKey, "de")
+        } else {
+            XCTFail("Expected .elevenLabs(.german)")
+        }
+    }
 }
