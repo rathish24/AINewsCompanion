@@ -8,14 +8,20 @@ public enum AIProvider: String, CaseIterable, Sendable, Codable {
     case openAI
     case groq
     case huggingFace
+    case azureOpenAI
+    case awsBedrock
+    case googleCloudVertex
 
     public var displayName: String {
         switch self {
-        case .gemini:      return "Gemini"
-        case .claude:      return "Claude"
-        case .openAI:      return "OpenAI"
-        case .groq:        return "Groq"
-        case .huggingFace: return "Hugging Face"
+        case .gemini:           return "Gemini"
+        case .claude:           return "Claude"
+        case .openAI:           return "OpenAI"
+        case .groq:             return "Groq"
+        case .huggingFace:      return "Hugging Face"
+        case .azureOpenAI:      return "Azure OpenAI"
+        case .awsBedrock:       return "AWS Bedrock"
+        case .googleCloudVertex: return "Google Cloud Vertex"
         }
     }
 }
@@ -32,6 +38,19 @@ public enum NewsCompanionKit {
         public var maxArticleLength: Int
         public var debugLog: (@Sendable (String) -> Void)?
 
+        /// Azure OpenAI: resource base URL (e.g. `https://your-resource.openai.azure.com`). Required when `provider == .azureOpenAI`. `model` is the deployment name.
+        public var azureEndpoint: String?
+        /// AWS: region (e.g. `us-east-1`) or use `awsEndpoint` for a custom proxy URL. `model` is the Bedrock model ID.
+        public var awsRegion: String?
+        /// AWS: optional full endpoint URL (e.g. proxy). When set, overrides URL built from `awsRegion`.
+        public var awsEndpoint: String?
+        /// Google Cloud Vertex: project ID. Required when `provider == .googleCloudVertex`.
+        public var gcpProject: String?
+        /// Google Cloud Vertex: location (e.g. `us-central1`). Required when `provider == .googleCloudVertex`. `model` is the model name (e.g. `gemini-1.5-flash`).
+        public var gcpLocation: String?
+        /// Optional extra HTTP headers for cloud clients (Azure, AWS, Google). Use when your endpoint requires custom headers (e.g. tenant ID, tracing).
+        public var additionalHeaders: [String: String]?
+
         public init(
             apiKey: String,
             provider: AIProvider = .groq,
@@ -39,7 +58,13 @@ public enum NewsCompanionKit {
             articleFetcher: (any ArticleFetching)? = nil,
             timeout: TimeInterval = 60,
             maxArticleLength: Int = 12_000,
-            debugLog: (@Sendable (String) -> Void)? = nil
+            debugLog: (@Sendable (String) -> Void)? = nil,
+            azureEndpoint: String? = nil,
+            awsRegion: String? = nil,
+            awsEndpoint: String? = nil,
+            gcpProject: String? = nil,
+            gcpLocation: String? = nil,
+            additionalHeaders: [String: String]? = nil
         ) {
             self.apiKey = apiKey
             self.provider = provider
@@ -48,6 +73,12 @@ public enum NewsCompanionKit {
             self.timeout = timeout
             self.maxArticleLength = maxArticleLength
             self.debugLog = debugLog
+            self.azureEndpoint = azureEndpoint
+            self.awsRegion = awsRegion
+            self.awsEndpoint = awsEndpoint
+            self.gcpProject = gcpProject
+            self.gcpLocation = gcpLocation
+            self.additionalHeaders = additionalHeaders
         }
     }
 
@@ -84,6 +115,26 @@ public enum NewsCompanionKit {
                 model: config.model ?? "mistralai/Mistral-7B-Instruct-v0.3",
                 timeout: config.timeout
             )
+        case .azureOpenAI:
+            let endpoint = config.azureEndpoint ?? ""
+            let deployment = config.model ?? "gpt-4o-mini"
+            return AzureOpenAIClient(endpoint: endpoint, deployment: deployment, apiKey: config.apiKey, timeout: config.timeout, additionalHeaders: config.additionalHeaders)
+        case .awsBedrock:
+            let endpoint: String
+            if let custom = config.awsEndpoint, !custom.isEmpty {
+                endpoint = custom
+            } else if let region = config.awsRegion, !region.isEmpty {
+                endpoint = "https://bedrock-runtime.\(region).amazonaws.com"
+            } else {
+                endpoint = "https://bedrock-runtime.us-east-1.amazonaws.com"
+            }
+            let modelId = config.model ?? "anthropic.claude-3-sonnet-20240229-v1:0"
+            return AWSBedrockClient(endpoint: endpoint, modelId: modelId, apiKey: config.apiKey, timeout: config.timeout, additionalHeaders: config.additionalHeaders)
+        case .googleCloudVertex:
+            let project = config.gcpProject ?? ""
+            let location = config.gcpLocation ?? "us-central1"
+            let model = config.model ?? "gemini-1.5-flash"
+            return GoogleCloudVertexClient(project: project, location: location, model: model, apiKey: config.apiKey, timeout: config.timeout, additionalHeaders: config.additionalHeaders)
         }
     }
 

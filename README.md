@@ -32,9 +32,44 @@ let config = NewsCompanionKit.Config(
 
 Or generate insights only: `let result = try await NewsCompanionKit.generate(url: url, config: config)`.
 
+### Cloud clients (Azure, AWS, Google Cloud)
+
+Article-to-summary clients for your own cloud models live in `Sources/NewsCompanionKit/CloudClients/`:
+
+| Client | Purpose | Pass your model via |
+|--------|--------|----------------------|
+| **AzureOpenAIClient** | Azure OpenAI deployments | `Config(..., provider: .azureOpenAI, model: "your-deployment", azureEndpoint: "https://your-resource.openai.azure.com", ...)` |
+| **AWSBedrockClient** | AWS Bedrock or custom proxy | `Config(..., provider: .awsBedrock, model: "anthropic.claude-3-sonnet-...", awsRegion: "us-east-1" or awsEndpoint: "https://...", ...)` |
+| **GoogleCloudVertexClient** | Vertex AI | `Config(..., provider: .googleCloudVertex, model: "gemini-1.5-flash", gcpProject: "...", gcpLocation: "us-central1", ...)` |
+
+You can create and use these clients without a key for local validation; add your API key and endpoint when ready. All conform to `AICompleting` and return the same JSON summary format.
+
+**Optional headers:** When your endpoint requires extra HTTP headers (e.g. Azure `x-ms-tenant-id`, custom auth, or tracing headers), pass them via `Config.additionalHeaders` or the client initializers:
+
+```swift
+// Via Config (used by makeAIClient for all cloud providers)
+var config = NewsCompanionKit.Config(
+    apiKey: key,
+    provider: .azureOpenAI,
+    model: "gpt-4o-mini",
+    azureEndpoint: "https://your-resource.openai.azure.com",
+    additionalHeaders: ["x-ms-tenant-id": "your-tenant-id"]
+)
+
+// Or when creating a client directly
+let client = AzureOpenAIClient(
+    endpoint: "https://your-resource.openai.azure.com",
+    deployment: "gpt-4o-mini",
+    apiKey: key,
+    additionalHeaders: ["X-Custom-Header": "value"]
+)
+```
+
+Headers are applied after the default ones (Content-Type, api-key, etc.), so you can override defaults if needed.
+
 ### Features
 
-- **Multi-provider**: Groq (default), Gemini, Claude, OpenAI, Hugging Face via a single `Config`.
+- **Multi-provider**: Groq (default), Gemini, Claude, OpenAI, Hugging Face, **Azure OpenAI**, **AWS Bedrock**, **Google Cloud Vertex** via a single `Config`. Pass your cloud endpoint and model name to use your server’s available model.
 - **Structured output**: Summary, bullets, “why it matters,” and up to 5 validated topic chips (title, prompt, summary).
 - **Topic validation**: Angle-tag dedup, ordering, and scoring driven by `topics.json`; no filler chips when the model returns fewer valid topics.
 - **Caching**: Optional SwiftData cache to avoid repeated API calls for the same URL.
@@ -112,8 +147,8 @@ struct ContentView: View {
 - **`CompanionSheetView(result:loading:error:onTopicTap:onTelemetry:)`**  
   SwiftUI view that displays the companion result (or loading/error). Used by the modifier; use directly if you manage state yourself.
 
-- **`Config(apiKey:provider:model:timeout:debugLog:)`**  
-  Configuration for the AI client (key, provider, optional model override, timeout, optional debug logging).
+- **`Config(apiKey:provider:model:articleFetcher:timeout:maxArticleLength:debugLog:azureEndpoint:awsRegion:awsEndpoint:gcpProject:gcpLocation:additionalHeaders:)`**  
+  Configuration for the AI client: key, provider, optional model override, timeout, optional debug logging. For cloud providers: `azureEndpoint`, `awsRegion`/`awsEndpoint`, `gcpProject`/`gcpLocation`. Optional `additionalHeaders` for extra HTTP headers (Azure, AWS, Google Cloud only).
 
 ## Sample App
 
@@ -121,7 +156,7 @@ The **SampleApp** demonstrates NewsCompanionKit with a list of sample articles a
 
 1. Open `SampleApp/SampleApp.xcodeproj` in Xcode.
 2. Copy `SampleApp/ApiKeys.xcconfig.example` to `ApiKeys.xcconfig` and add your API keys (e.g. `GROQ_API_KEY = "your-groq-key"`). The project injects these into Info.plist at build time.
-3. Run the app, pick a provider (default: Groq), then use the **App 1** and **App 2** tabs to verify each flow: **App 1** — tap **AI Companion** to open the summary sheet (no audio); **App 2** — tap **Audio** to fetch summary and play TTS (no sheet).
+3. Run the app, pick a provider (default: Groq), then use the **App 1** and **App 2** tabs to verify each flow: **App 1** — tap **AI Companion** to open the summary sheet (no audio); **App 2** — tap **Audio** to fetch summary and play TTS (no sheet). For Azure/AWS/Google Cloud, if your endpoint requires extra HTTP headers, set them when building `Config` (e.g. `Config(..., additionalHeaders: ["x-ms-tenant-id": "your-tenant"])`).
 
 ## Two app scenarios
 

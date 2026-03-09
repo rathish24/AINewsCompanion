@@ -19,7 +19,10 @@ struct ContentView: View {
         .claude: "CLAUDE_API_KEY",
         .openAI: "OPENAI_API_KEY",
         .groq: "GROQ_API_KEY",
-        .huggingFace: "HUGGINGFACE_API_KEY"
+        .huggingFace: "HUGGINGFACE_API_KEY",
+        .azureOpenAI: "AZURE_OPENAI_API_KEY",
+        .awsBedrock: "AWS_BEDROCK_ACCESS_KEY",
+        .googleCloudVertex: "GCP_VERTEX_API_KEY"
     ]
 
     static func resolveAPIKey(for provider: AIProvider) -> String? {
@@ -106,7 +109,23 @@ struct ContentView: View {
     private var companionConfig: NewsCompanionKit.Config? {
         guard let key = effectiveAPIKey else { return nil }
         var config = NewsCompanionKit.Config(apiKey: key, provider: selectedProvider)
+        switch selectedProvider {
+        case .azureOpenAI:
+            if let v = Bundle.main.object(forInfoDictionaryKey: "AZURE_OPENAI_ENDPOINT") as? String, !v.isEmpty { config.azureEndpoint = v }
+            if let v = Bundle.main.object(forInfoDictionaryKey: "AZURE_OPENAI_DEPLOYMENT") as? String, !v.isEmpty { config.model = v }
+        case .awsBedrock:
+            if let v = Bundle.main.object(forInfoDictionaryKey: "AWS_REGION") as? String, !v.isEmpty { config.awsRegion = v }
+            if let v = Bundle.main.object(forInfoDictionaryKey: "AWS_ENDPOINT") as? String, !v.isEmpty { config.awsEndpoint = v }
+            if let v = Bundle.main.object(forInfoDictionaryKey: "AWS_MODEL_ID") as? String, !v.isEmpty { config.model = v }
+        case .googleCloudVertex:
+            if let v = Bundle.main.object(forInfoDictionaryKey: "GCP_PROJECT") as? String, !v.isEmpty { config.gcpProject = v }
+            if let v = Bundle.main.object(forInfoDictionaryKey: "GCP_LOCATION") as? String, !v.isEmpty { config.gcpLocation = v }
+            if let v = Bundle.main.object(forInfoDictionaryKey: "GCP_MODEL") as? String, !v.isEmpty { config.model = v }
+        default:
+            break
+        }
         if CompanionDebug.isEnabled { config.debugLog = { CompanionDebug.log($0) } }
+        // For cloud providers, optional extra HTTP headers: config.additionalHeaders = ["x-ms-tenant-id": "id"]
         return config
     }
 
