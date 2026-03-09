@@ -67,6 +67,58 @@ let client = AzureOpenAIClient(
 
 Headers are applied after the default ones (Content-Type, api-key, etc.), so you can override defaults if needed.
 
+### Translation (TranslationClients)
+
+Separate Swift package **TranslationClients** provides text translation (e.g. English → Tamil) via **AWS Translate**, **Azure Translator**, or **Google Cloud Translation**. Use it when you need to translate companion or TTS text to another language.
+
+| Provider | Client | Config / auth |
+|----------|--------|----------------|
+| **AWS Translate** | `AWSTranslateClient` | `endpoint` (or `region`) + optional `apiKey` for proxy; direct AWS requires SigV4 via `additionalHeaders`. |
+| **Azure Translator** | `AzureTranslatorClient` | `subscriptionKey` + `subscriptionRegion` (Cognitive Services). |
+| **Google Cloud Translation** | `GoogleCloudTranslateClient` | `apiKey` (Translation API), or proxy / Bearer via `additionalHeaders`. |
+
+```swift
+import TranslationClients
+
+var config = TranslationConfig(
+    provider: .googleCloud,  // or .aws, .azure
+    googleApiKey: "YOUR_GOOGLE_API_KEY"
+)
+let translated = try await TranslationClients.translate(
+    text: "Hello, world",
+    sourceLanguageCode: "en",
+    targetLanguageCode: "ta",
+    config: config
+)
+```
+
+Or create a client and call `translate(text:sourceLanguageCode:targetLanguageCode:)` directly. All clients conform to `TextTranslating`.
+
+**Length limits and chunking**  
+Long text is chunked automatically so you can pass arbitrarily long strings:
+- **AWS Translate**: 9,000 UTF-8 bytes per request (API limit 10,000). Chunks are rejoined with a space.
+- **Azure Translator**: 25,000 characters per request. Chunking prefers sentence/word boundaries.
+- **Google Cloud Translation**: 5,000 characters per request. Same boundary rules.
+
+**Prompt-based translation (translation.json)**
+For production-grade, instruction-following translation (preserve placeholders, formatting, etc.), use the prompt in **`Sources/TranslationClients/Resources/translation.json`** with an LLM. The prompt is **loaded at the start of each `translate()` call** (no caching), so edits to the JSON are picked up on the next request. Set `usePromptBasedTranslation: true` and pass a `promptCompleter`. Easiest: use **`ClosureTranslationPromptCompleter`** with any client that has `complete(prompt:)` (e.g. NewsCompanionKit’s Bedrock, Azure OpenAI, or Vertex client):
+
+```swift
+import TranslationClients
+import NewsCompanionKit
+
+let aiClient = /* e.g. AzureOpenAIClient(...) or AWSBedrockClient(...) */
+var config = TranslationConfig(
+    provider: .azure,
+    usePromptBasedTranslation: true,
+    promptCompleter: ClosureTranslationPromptCompleter { try await aiClient.complete(prompt: $0) }
+)
+let client = TranslationClients.makeClient(config: config)
+let translated = try await client.translate(text: "Hello", sourceLanguageCode: "en", targetLanguageCode: "ta")
+```
+
+The LLM must return JSON with `translated_text`. Markdown-wrapped JSON (e.g. ` ```json ... ``` `) is stripped before parsing.
+
 ### Features
 
 - **Multi-provider**: Groq (default), Gemini, Claude, OpenAI, Hugging Face, **Azure OpenAI**, **AWS Bedrock**, **Google Cloud Vertex** via a single `Config`. Pass your cloud endpoint and model name to use your server’s available model.

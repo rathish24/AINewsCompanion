@@ -89,6 +89,23 @@ struct ContentView: View {
         speaker.configure(provider: provider, sarvamLanguage: selectedSarvamLanguage, elevenLabsLanguage: selectedElevenLabsLanguage)
     }
 
+    private func providerChip(_ provider: AIProvider) -> some View {
+        Button {
+            saveProvider(provider)
+        } label: {
+            Text(provider.displayName)
+                .font(.subheadline)
+                .fontWeight(.medium)
+                .lineLimit(1)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(selectedProvider == provider ? Color.accentColor : Color(.tertiarySystemFill))
+                .foregroundStyle(selectedProvider == provider ? .white : .primary)
+                .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
     private var effectiveTTSLanguage: EffectiveTTSLanguage {
         selectedTTSProvider == .sarvam
             ? .sarvam(selectedSarvamLanguage)
@@ -144,12 +161,21 @@ struct ContentView: View {
                     .padding(.top, 4)
             }
 
-            Picker("Summary client (AI)", selection: Binding(get: { selectedProvider }, set: { saveProvider($0) })) {
-                ForEach(AIProvider.allCases, id: \.self) { provider in
-                    Text(provider.displayName).tag(provider)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Summary client (AI)")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundStyle(.secondary)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(AIProvider.allCases, id: \.self) { provider in
+                            providerChip(provider)
+                        }
+                    }
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 4)
                 }
             }
-            .pickerStyle(.segmented)
             .padding(.horizontal, 24)
             .padding(.vertical, 8)
 
