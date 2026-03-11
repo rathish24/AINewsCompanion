@@ -111,9 +111,47 @@ public final class ConversationEngine: Sendable {
            let end = cleaned.lastIndex(of: "}") {
             cleaned = String(cleaned[start...end])
         }
-        guard let data = cleaned.data(using: .utf8),
-              let decoded = try? JSONDecoder().decode(AIResponse.self, from: data) else { return nil }
-        return decoded.toCompanionResult(config: config)
+        guard let data = cleaned.data(using: .utf8) else { return nil }
+
+        // If top-level looks like direct payload (has "summary" or "topics"), decode as AIResponse first.
+        if let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           dict["summary"] != nil || dict["topics"] != nil {
+            if let decoded = try? JSONDecoder().decode(AIResponse.self, from: data),
+               let result = decoded.toCompanionResultIfNonEmpty(config: config) {
+                return result
+            }
+        }
+
+        // Some models (e.g. Azure) wrap payload in a string under "final", "content", "result", etc.
+        let wrapperKeys = ["final", "content", "result", "response", "data", "output", "text"]
+        guard let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        let innerString = wrapperKeys.lazy
+            .compactMap { dict[$0] as? String }
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty }
+
+        if let inner = innerString {
+            // Try decode inner as JSON (AIResponse)
+            var innerData = inner.data(using: .utf8)
+            if innerData == nil, inner.first == "{", inner.contains("\\\"") {
+                // Possibly double-escaped: replace \" with " for one more level
+                let unescaped = inner.replacingOccurrences(of: "\\\"", with: "\"")
+                    .replacingOccurrences(of: "\\\\", with: "\\")
+                innerData = unescaped.data(using: .utf8)
+            }
+            if let data = innerData,
+               let decoded = try? JSONDecoder().decode(AIResponse.self, from: data),
+               let result = decoded.toCompanionResultIfNonEmpty(config: config) {
+                return result
+            }
+            // We had a wrapper with content but inner failed to parse → do not fall back to outer; fail so engine retries
+            return nil
+        }
+
+        // Direct decode when no wrapper detected
+        guard let decoded = try? JSONDecoder().decode(AIResponse.self, from: data),
+              let result = decoded.toCompanionResultIfNonEmpty(config: config) else { return nil }
+        return result
     }
 }
 
@@ -135,6 +173,15 @@ private struct AIResponse: Decodable {
     struct FactCheckPart: Decodable {
         let claim: String?
         let whatToVerify: String?
+    }
+
+    /// Returns a valid companion result, or nil if the decoded payload is effectively empty (so caller can treat as parse failure and retry).
+    func toCompanionResultIfNonEmpty(config: TopicValidatorConfig) -> CompanionResult? {
+        let result = toCompanionResult(config: config)
+        let emptyOneLiner = result.summary.oneLiner.isEmpty || result.summary.oneLiner == "No summary available."
+        let noContent = emptyOneLiner && result.summary.bullets.isEmpty && result.summary.whyItMatters.isEmpty && result.topics.isEmpty && result.factChecks.isEmpty
+        if noContent { return nil }
+        return result
     }
 
     func toCompanionResult(config: TopicValidatorConfig) -> CompanionResult {

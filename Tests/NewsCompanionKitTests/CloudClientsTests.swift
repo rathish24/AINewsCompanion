@@ -5,6 +5,45 @@ import Testing
 @Suite("Cloud Clients Tests")
 struct CloudClientsTests {
 
+    @Test("AzureOpenAIClient parseResponse extracts content when Azure returns content as string (Groq-style)")
+    func azureParseResponseString() throws {
+        let companionJSON = #"{"summary":{"oneLiner":"US and Israel struck targets.","bullets":["Strike one.","Strike two."],"whyItMatters":"Escalation risk."},"topics":[{"title":"What happened","prompt":"What did the strikes do?","summary":"The article describes the strikes."}],"factChecks":[]}"#
+        let azureBody: [String: Any] = [
+            "choices": [
+                [
+                    "message": [
+                        "role": "assistant",
+                        "content": companionJSON
+                    ]
+                ]
+            ]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: azureBody)
+        let content = try AzureOpenAIClient.parseResponse(data)
+        #expect(content == companionJSON)
+        #expect(content.contains("\"oneLiner\":\"US and Israel struck targets.\""))
+    }
+
+    @Test("AzureOpenAIClient parseResponse extracts content when Azure returns content as array of parts")
+    func azureParseResponseArray() throws {
+        let companionJSON = #"{"summary":{"oneLiner":"Test.","bullets":[],"whyItMatters":""},"topics":[],"factChecks":[]}"#
+        let azureBody: [String: Any] = [
+            "choices": [
+                [
+                    "message": [
+                        "role": "assistant",
+                        "content": [
+                            ["type": "text", "text": companionJSON]
+                        ]
+                    ]
+                ]
+            ]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: azureBody)
+        let content = try AzureOpenAIClient.parseResponse(data)
+        #expect(content == companionJSON)
+    }
+
     @Test("AzureOpenAIClient can be created with nil additionalHeaders")
     func azureInitWithoutHeaders() {
         _ = AzureOpenAIClient(

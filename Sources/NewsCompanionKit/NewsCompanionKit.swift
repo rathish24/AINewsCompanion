@@ -198,11 +198,21 @@ public enum NewsCompanionKit {
 
     /// Returns a closure that fetches a companion result for a URL: uses cache when provided and returns a cached result when available, otherwise calls `generate(url:config:)` and optionally saves. Use in App 2: `let result = try await resultFetcher(config: config, cache: myCache)(url)` then `SummaryToAudio.shared.play(text: result.textForSpeech, ...)`.
     public static func resultFetcher(config: Config, cache: (any CompanionResultCaching)?) -> (URL) async throws -> CompanionResult {
+        resultFetcher(config: config, cache: cache, generateOverride: nil)
+    }
+
+    /// Internal: same as resultFetcher but with optional override for generate (used when provider is e.g. Azure). Lets tests verify first load = API, second load = cache without hitting the network.
+    static func resultFetcher(config: Config, cache: (any CompanionResultCaching)?, generateOverride: (@Sendable (URL) async throws -> CompanionResult)?) -> (URL) async throws -> CompanionResult {
         { url in
             if let cache = cache, let cached = await cache.cachedResult(for: url) {
                 return cached
             }
-            let result = try await generate(url: url, config: config)
+            let result: CompanionResult
+            if let gen = generateOverride {
+                result = try await gen(url)
+            } else {
+                result = try await generate(url: url, config: config)
+            }
             if let cache = cache {
                 await cache.save(result: result, for: url)
             }

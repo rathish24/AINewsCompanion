@@ -37,11 +37,12 @@ public final class AzureOpenAIClient: AICompleting, Sendable {
     }
 
     public func complete(prompt: String) async throws -> String {
-       
         let url1 = URL(string: "https://rathishk24-2173-text-su-resource.openai.azure.com/openai/v1/chat/completions")!
         var request = URLRequest(url: url1)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        // Azure typically expects api-key header (Bearer can require RBAC); send both for compatibility.
+        request.setValue(apiKey, forHTTPHeaderField: "api-key")
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.timeoutInterval = timeout
         additionalHeaders?.forEach { request.setValue($1, forHTTPHeaderField: $0) }
@@ -66,13 +67,25 @@ public final class AzureOpenAIClient: AICompleting, Sendable {
         print("[AzureOpenAIClient] HTTP \(http.statusCode) – responseLength: \(data.count)")
         if http.statusCode != 200 {
             let errMsg = Self.parseError(data, statusCode: http.statusCode)
+            let bodyPreview = String(data: data, encoding: .utf8).map { String($0.prefix(300)) } ?? "nil"
+            print("[AzureOpenAIClient] HTTP \(http.statusCode) – \(errMsg) body: \(bodyPreview)")
             throw AIClientError.apiError(errMsg)
         }
-        return try Self.parseResponse(data)
+        let content: String
+        do {
+            content = try Self.parseResponse(data)
+        } catch {
+            let bodyPreview = String(data: data, encoding: .utf8).map { String($0.prefix(500)) } ?? "nil"
+            print("[AzureOpenAIClient] parseResponse failed – response body: \(bodyPreview)")
+            throw error
+        }
+        print("[AzureOpenAIClient] success – responseLength: \(content.count)")
+        return content
     }
 
-    /// Same parsing as GroqClient: extract choices[0].message.content (string). Fallback for content-as-array for Azure compatibility.
-    private static func parseResponse(_ data: Data) throws -> String {
+    /// Parsing: same as Groq (content string first). Fallback for Azure when content is array of parts (e.g. [{"type":"text","text":"..."}]).
+    /// Internal for testing with fixture responses.
+    static func parseResponse(_ data: Data) throws -> String {
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let choices = json["choices"] as? [[String: Any]],
               let first = choices.first,
@@ -80,16 +93,15 @@ public final class AzureOpenAIClient: AICompleting, Sendable {
             throw AIClientError.invalidResponse
         }
         let trim = { (s: String) in s.trimmingCharacters(in: .whitespacesAndNewlines) }
-        if let contentString = message["content"] as? String {
-            return trim(contentString)
+        if let content = message["content"] as? String {
+            return trim(content)
         }
-        if let contentParts = message["content"] as? [[String: Any]] {
-            let textParts = contentParts.compactMap { part -> String? in
-                guard part["type"] as? String == "text", let text = part["text"] as? String else { return nil }
-                return text
-            }
-            let joined = textParts.joined()
-            if !joined.isEmpty { return trim(joined) }
+        if let parts = message["content"] as? [[String: Any]] {
+            let text = parts.compactMap { part -> String? in
+                guard part["type"] as? String == "text", let t = part["text"] as? String else { return nil }
+                return t
+            }.joined()
+            if !text.isEmpty { return trim(text) }
         }
         throw AIClientError.invalidResponse
     }
