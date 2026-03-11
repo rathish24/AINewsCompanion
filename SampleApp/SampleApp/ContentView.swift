@@ -2,6 +2,7 @@ import SwiftUI
 import SwiftData
 import NewsCompanionKit
 import SummaryToAudio
+import TranslationClients
 
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
@@ -10,6 +11,7 @@ struct ContentView: View {
     @State private var selectedTTSProvider: TTSProvider = Self.savedTTSProvider()
     @State private var selectedSarvamLanguage: SpeechLanguage = .english
     @State private var selectedElevenLabsLanguage: ElevenLabsLanguage = .english
+    @State private var selectedAzureLanguage: AzureSpeechLanguage = .englishUS
     @State private var showLanguageSelection = false
     @ObservedObject private var speaker = SummaryToAudio.shared
 
@@ -26,12 +28,13 @@ struct ContentView: View {
     ]
 
     static func resolveAPIKey(for provider: AIProvider) -> String? {
-        if let bundleKey = providerBundleKeys[provider],
-           let value = Bundle.main.object(forInfoDictionaryKey: bundleKey) as? String {
-            let trimmed = value.trimmingCharacters(in: .whitespaces)
-            if !trimmed.isEmpty, !trimmed.hasPrefix("YOUR_") { return trimmed }
+        guard let bundleKey = providerBundleKeys[provider] else { return nil }
+        var value = (Bundle.main.object(forInfoDictionaryKey: bundleKey) as? String)?.trimmingCharacters(in: .whitespaces)
+        if value == nil || value?.isEmpty == true || value?.hasPrefix("YOUR_") == true {
+            value = valueFromBundledApiKeys(bundleKey)
         }
-        return nil
+        guard let v = value, !v.isEmpty, !v.hasPrefix("YOUR_") else { return nil }
+        return v
     }
 
     private var effectiveSarvamAPIKey: String? {
@@ -50,6 +53,39 @@ struct ContentView: View {
         return nil
     }
 
+    private var effectiveAzureSpeechKey: String? {
+        if let value = Bundle.main.object(forInfoDictionaryKey: "AZURE_SPEECH_KEY") as? String {
+            let trimmed = value.trimmingCharacters(in: .whitespaces)
+            if !trimmed.isEmpty, !trimmed.hasPrefix("YOUR_") { return trimmed }
+        }
+        return nil
+    }
+
+    private var effectiveAzureSpeechRegion: String? {
+        if let value = Bundle.main.object(forInfoDictionaryKey: "AZURE_SPEECH_REGION") as? String {
+            let trimmed = value.trimmingCharacters(in: .whitespaces)
+            if !trimmed.isEmpty, !trimmed.hasPrefix("YOUR_") { return trimmed }
+        }
+        return nil
+    }
+
+    /// Azure Translator key/region for non-English Azure TTS. Can use same or separate Cognitive Services resource.
+    private var effectiveAzureTranslatorKey: String? {
+        if let value = Bundle.main.object(forInfoDictionaryKey: "AZURE_TRANSLATOR_KEY") as? String {
+            let trimmed = value.trimmingCharacters(in: .whitespaces)
+            if !trimmed.isEmpty, !trimmed.hasPrefix("YOUR_") { return trimmed }
+        }
+        return effectiveAzureSpeechKey
+    }
+
+    private var effectiveAzureTranslatorRegion: String? {
+        if let value = Bundle.main.object(forInfoDictionaryKey: "AZURE_TRANSLATOR_REGION") as? String {
+            let trimmed = value.trimmingCharacters(in: .whitespaces)
+            if !trimmed.isEmpty, !trimmed.hasPrefix("YOUR_") { return trimmed }
+        }
+        return effectiveAzureSpeechRegion
+    }
+
     private static func libreTranslateURL() -> String? {
         guard let value = Bundle.main.object(forInfoDictionaryKey: "LIBRETRANSLATE_URL") as? String else { return nil }
         let t = value.trimmingCharacters(in: .whitespaces)
@@ -63,6 +99,14 @@ struct ContentView: View {
     }
 
     private var effectiveAPIKey: String? { Self.resolveAPIKey(for: selectedProvider) }
+
+    private var isTTSEnabledForSelectedProvider: Bool {
+        switch selectedTTSProvider {
+        case .sarvam: return effectiveSarvamAPIKey != nil
+        case .elevenLabs: return effectiveElevenLabsAPIKey != nil
+        case .azure: return effectiveAzureSpeechKey != nil && effectiveAzureSpeechRegion != nil
+        }
+    }
 
     private static func savedProvider() -> AIProvider {
         guard let raw = UserDefaults.standard.string(forKey: providerKey),
@@ -86,7 +130,7 @@ struct ContentView: View {
         selectedTTSProvider = provider
         speaker.stop()
         speaker.clearReplayCache()
-        speaker.configure(provider: provider, sarvamLanguage: selectedSarvamLanguage, elevenLabsLanguage: selectedElevenLabsLanguage)
+        speaker.configure(provider: provider, sarvamLanguage: selectedSarvamLanguage, elevenLabsLanguage: selectedElevenLabsLanguage, azureLanguage: selectedAzureLanguage)
     }
 
     private func providerChip(_ provider: AIProvider) -> some View {
@@ -107,9 +151,11 @@ struct ContentView: View {
     }
 
     private var effectiveTTSLanguage: EffectiveTTSLanguage {
-        selectedTTSProvider == .sarvam
-            ? .sarvam(selectedSarvamLanguage)
-            : .elevenLabs(selectedElevenLabsLanguage)
+        switch selectedTTSProvider {
+        case .sarvam: return .sarvam(selectedSarvamLanguage)
+        case .elevenLabs: return .elevenLabs(selectedElevenLabsLanguage)
+        case .azure: return .azure(selectedAzureLanguage)
+        }
     }
 
     private func setElevenLabsTranslatorIfNeeded() {
@@ -123,13 +169,58 @@ struct ContentView: View {
         }
     }
 
+    private func setAzureTranslatorIfNeeded() {
+        guard selectedTTSProvider == .azure,
+              let key = effectiveAzureTranslatorKey,
+              let region = effectiveAzureTranslatorRegion else {
+            SummaryToAudio.shared.setAzureTranslator(nil)
+            return
+        }
+        SummaryToAudio.shared.setAzureTranslator { text, languageCode in
+            var translationConfig = TranslationConfig(provider: .azure)
+            translationConfig.azureSubscriptionKey = key
+            translationConfig.azureSubscriptionRegion = region
+            return try await TranslationClients.translate(text: text, sourceLanguageCode: "en", targetLanguageCode: languageCode, config: translationConfig)
+        }
+    }
+
+    /// Reads a key from the bundled ApiKeys.xcconfig (fallback when not in Info.plist). Format: KEY = "value" or KEY = value.
+    private static func valueFromBundledApiKeys(_ key: String) -> String? {
+        guard let url = Bundle.main.url(forResource: "ApiKeys", withExtension: "xcconfig"),
+              let content = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+        for line in content.components(separatedBy: .newlines) {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.hasPrefix("//"), trimmed.contains("=") else { continue }
+            let parts = trimmed.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+            guard parts.count == 2 else { continue }
+            let keyName = parts[0].trimmingCharacters(in: .whitespaces)
+            guard keyName == key else { continue }
+            var value = String(parts[1]).trimmingCharacters(in: .whitespaces)
+            if value.hasPrefix("\""), value.hasSuffix("\"") { value = String(value.dropFirst().dropLast()) }
+            return value.isEmpty ? nil : value
+        }
+        return nil
+    }
+
     private var companionConfig: NewsCompanionKit.Config? {
         guard let key = effectiveAPIKey else { return nil }
+        print("key ---- \(key)")
         var config = NewsCompanionKit.Config(apiKey: key, provider: selectedProvider)
+        print("config ---- \(config)")
+        print("selectedProvider ---- \(selectedProvider)")
         switch selectedProvider {
         case .azureOpenAI:
-            if let v = Bundle.main.object(forInfoDictionaryKey: "AZURE_OPENAI_ENDPOINT") as? String, !v.isEmpty { config.azureEndpoint = v }
-            if let v = Bundle.main.object(forInfoDictionaryKey: "AZURE_OPENAI_DEPLOYMENT") as? String, !v.isEmpty { config.model = v }
+
+            var endpoint = Bundle.main.object(forInfoDictionaryKey: "AZURE_OPENAI_ENDPOINT") as? String
+            if endpoint?.trimmingCharacters(in: .whitespaces).isEmpty != false {
+                endpoint = Self.valueFromBundledApiKeys("AZURE_OPENAI_ENDPOINT")
+            }
+            if let v = endpoint, !v.isEmpty { config.azureEndpoint = v.trimmingCharacters(in: .whitespaces) }
+            var deployment = Bundle.main.object(forInfoDictionaryKey: "AZURE_OPENAI_DEPLOYMENT") as? String
+            if deployment?.trimmingCharacters(in: .whitespaces).isEmpty != false {
+                deployment = Self.valueFromBundledApiKeys("AZURE_OPENAI_DEPLOYMENT")
+            }
+            if let v = deployment, !v.isEmpty { config.model = v.trimmingCharacters(in: .whitespaces) }
         case .awsBedrock:
             if let v = Bundle.main.object(forInfoDictionaryKey: "AWS_REGION") as? String, !v.isEmpty { config.awsRegion = v }
             if let v = Bundle.main.object(forInfoDictionaryKey: "AWS_ENDPOINT") as? String, !v.isEmpty { config.awsEndpoint = v }
@@ -202,7 +293,7 @@ struct ContentView: View {
                         articles: skyArticleList,
                         playbackController: playbackController,
                         effectiveTTSLanguage: effectiveTTSLanguage,
-                        isTTSEnabled: selectedTTSProvider == .sarvam ? (effectiveSarvamAPIKey != nil) : (effectiveElevenLabsAPIKey != nil),
+                        isTTSEnabled: isTTSEnabledForSelectedProvider,
                         onLongPress: { showLanguageSelection = true }
                     )
                 }
@@ -226,15 +317,23 @@ struct ContentView: View {
                 provider: selectedTTSProvider,
                 elevenLabsKey: effectiveElevenLabsAPIKey,
                 sarvamKey: effectiveSarvamAPIKey,
+                azureSpeechKey: effectiveAzureSpeechKey,
+                azureSpeechRegion: effectiveAzureSpeechRegion,
                 sarvamLanguage: selectedSarvamLanguage,
                 elevenLabsLanguage: selectedElevenLabsLanguage,
+                azureLanguage: selectedAzureLanguage,
                 libreTranslateBaseURL: Self.libreTranslateURL(),
                 libreTranslateAPIKey: Self.libreTranslateAPIKey()
             )
             setElevenLabsTranslatorIfNeeded()
+            setAzureTranslatorIfNeeded()
         }
         .onChange(of: selectedProvider) { _, _ in setElevenLabsTranslatorIfNeeded() }
-        .onChange(of: selectedTTSProvider) { _, _ in setElevenLabsTranslatorIfNeeded() }
+        .onChange(of: selectedTTSProvider) { _, _ in
+            setElevenLabsTranslatorIfNeeded()
+            setAzureTranslatorIfNeeded()
+            speaker.configure(provider: selectedTTSProvider, sarvamLanguage: selectedSarvamLanguage, elevenLabsLanguage: selectedElevenLabsLanguage, azureLanguage: selectedAzureLanguage)
+        }
         .onChange(of: selectedElevenLabsLanguage) { _, newLang in
             setElevenLabsTranslatorIfNeeded()
             playbackController.stopPlayback()
@@ -246,12 +345,19 @@ struct ContentView: View {
             speaker.clearReplayCache()
             speaker.configure(provider: selectedTTSProvider, sarvamLanguage: newLang, elevenLabsLanguage: selectedElevenLabsLanguage)
         }
+        .onChange(of: selectedAzureLanguage) { _, newLang in
+            setAzureTranslatorIfNeeded()
+            playbackController.stopPlayback()
+            speaker.clearReplayCache()
+            speaker.configure(provider: selectedTTSProvider, azureLanguage: newLang)
+        }
         .overlay {
             if showLanguageSelection {
                 LanguageSelectionOverlay(
                     selectedTTSProvider: selectedTTSProvider,
                     selectedSarvamLanguage: $selectedSarvamLanguage,
                     selectedElevenLabsLanguage: $selectedElevenLabsLanguage,
+                    selectedAzureLanguage: $selectedAzureLanguage,
                     isPresented: $showLanguageSelection
                 )
             }
@@ -263,7 +369,16 @@ struct LanguageSelectionOverlay: View {
     let selectedTTSProvider: TTSProvider
     @Binding var selectedSarvamLanguage: SpeechLanguage
     @Binding var selectedElevenLabsLanguage: ElevenLabsLanguage
+    @Binding var selectedAzureLanguage: AzureSpeechLanguage
     @Binding var isPresented: Bool
+
+    private var title: String {
+        switch selectedTTSProvider {
+        case .sarvam: return "Select Language (Sarvam AI)"
+        case .elevenLabs: return "Select Language (ElevenLabs)"
+        case .azure: return "Select Language (Azure)"
+        }
+    }
 
     var body: some View {
         ZStack {
@@ -272,13 +387,16 @@ struct LanguageSelectionOverlay: View {
                 .onTapGesture { isPresented = false }
 
             VStack(spacing: 16) {
-                Text(selectedTTSProvider == .elevenLabs ? "Select Language (ElevenLabs)" : "Select Language (Sarvam AI)")
+                Text(title)
                     .font(.headline)
 
-                if selectedTTSProvider == .sarvam {
+                switch selectedTTSProvider {
+                case .sarvam:
                     sarvamChips
-                } else {
+                case .elevenLabs:
                     elevenLabsChips
+                case .azure:
+                    azureChips
                 }
             }
             .frame(maxHeight: 400)
@@ -334,6 +452,38 @@ struct LanguageSelectionOverlay: View {
             .padding(.vertical, 4)
         }
         .frame(maxHeight: 320)
+    }
+
+    private var azureChips: some View {
+        ScrollView(.vertical, showsIndicators: true) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 8)], spacing: 8) {
+                ForEach(AzureSpeechLanguage.allCases, id: \.self) { lang in
+                    azureChip(lang)
+                }
+            }
+            .padding(.vertical, 4)
+        }
+        .frame(maxHeight: 320)
+    }
+
+    private func azureChip(_ lang: AzureSpeechLanguage) -> some View {
+        Button {
+            selectedAzureLanguage = lang
+            isPresented = false
+        } label: {
+            Text(lang.displayName)
+                .font(.subheadline)
+                .fontWeight(.medium)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(selectedAzureLanguage == lang ? Color.blue : Color.white)
+                .foregroundStyle(selectedAzureLanguage == lang ? .white : .primary)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20)
+                        .stroke(Color.blue.opacity(0.3), lineWidth: selectedAzureLanguage == lang ? 0 : 1)
+                )
+                .clipShape(Capsule())
+        }
     }
 
     private func elevenLabsChip(_ lang: ElevenLabsLanguage) -> some View {

@@ -15,6 +15,7 @@ public final class ClaudeClient: AICompleting, Sendable {
 
     public func complete(prompt: String) async throws -> String {
         let url = URL(string: "https://api.anthropic.com/v1/messages")!
+        print("[ClaudeClient] request – model: \(model) promptLength: \(prompt.count)")
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -33,11 +34,18 @@ public final class ClaudeClient: AICompleting, Sendable {
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse else { throw AIClientError.invalidResponse }
-        if http.statusCode != 200 {
-            throw AIClientError.apiError(Self.parseError(data, statusCode: http.statusCode))
+        guard let http = response as? HTTPURLResponse else {
+            print("[ClaudeClient] invalid response (not HTTPURLResponse)")
+            throw AIClientError.invalidResponse
         }
-        return try Self.parseResponse(data)
+        if http.statusCode != 200 {
+            let msg = Self.parseError(data, statusCode: http.statusCode)
+            print("[ClaudeClient] HTTP \(http.statusCode) – \(msg)")
+            throw AIClientError.apiError(msg)
+        }
+        let content = try Self.parseResponse(data)
+        print("[ClaudeClient] success – responseLength: \(content.count)")
+        return content
     }
 
     private static func parseResponse(_ data: Data) throws -> String {

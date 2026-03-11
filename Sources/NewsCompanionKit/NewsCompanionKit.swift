@@ -79,6 +79,8 @@ public enum NewsCompanionKit {
             self.gcpProject = gcpProject
             self.gcpLocation = gcpLocation
             self.additionalHeaders = additionalHeaders
+            print("[NewsCompanionKit] azureEndpoint \(azureEndpoint)")
+            print("[NewsCompanionKit] model \(model)")
         }
     }
 
@@ -118,6 +120,7 @@ public enum NewsCompanionKit {
         case .azureOpenAI:
             let endpoint = config.azureEndpoint ?? ""
             let deployment = config.model ?? "gpt-4o-mini"
+            print("[NewsCompanionKit] makeAIClient Azure OpenAI – endpoint: \(endpoint.isEmpty ? "(empty)" : endpoint) deployment: \(deployment) apiKeySet: \(!config.apiKey.isEmpty)")
             return AzureOpenAIClient(endpoint: endpoint, deployment: deployment, apiKey: config.apiKey, timeout: config.timeout, additionalHeaders: config.additionalHeaders)
         case .awsBedrock:
             let endpoint: String
@@ -160,20 +163,26 @@ public enum NewsCompanionKit {
 
     public static func generate(url: URL, config: Config) async throws -> CompanionResult {
         do {
+            print("[NewsCompanionKit] generate start – url: \(url.absoluteString) provider: \(config.provider.displayName) model: \(config.model ?? "default")")
             config.debugLog?("[\(config.provider.displayName)] request starting – url: \(url.absoluteString)")
             let fetcher: any ArticleFetching = config.articleFetcher ?? ArticleFetcher(config: .init(maxArticleLength: config.maxArticleLength))
             let article = try await fetcher.fetch(url: url)
+            print("[NewsCompanionKit] article fetched – title: \(article.title.prefix(50))... textLength: \(article.text.count)")
             config.debugLog?("Article fetched – title: \(article.title.prefix(60))...")
             guard !article.text.trimmingCharacters(in: .whitespaces).isEmpty else {
+                print("[NewsCompanionKit] empty article text – throwing emptyArticle")
                 throw NewsCompanionKitError.emptyArticle
             }
+            print("[NewsCompanionKit] calling AI client – provider: \(config.provider.displayName)")
             config.debugLog?("Calling \(config.provider.displayName) (\(config.model ?? "default model"))...")
             let aiClient = makeAIClient(config: config)
             let engine = ConversationEngine(aiClient: aiClient, maxArticleChars: config.maxArticleLength)
             let result = try await engine.generate(article: article)
+            print("[NewsCompanionKit] generate success – oneLiner: \(result.summary.oneLiner.prefix(60))...")
             config.debugLog?("[\(config.provider.displayName)] response OK – oneLiner: \(result.summary.oneLiner.prefix(80))...")
             return result
         } catch {
+            print("[NewsCompanionKit] generate failed – \(error.localizedDescription)")
             config.debugLog?("[\(config.provider.displayName)] failed – \(error.localizedDescription)")
             throw error
         }

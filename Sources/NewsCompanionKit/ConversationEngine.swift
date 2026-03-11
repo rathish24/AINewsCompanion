@@ -52,20 +52,34 @@ public final class ConversationEngine: Sendable {
         let effectivePromptConfig = promptConfig ?? ConversationPromptConfig.loadBundled()
         let effectiveTopicConfig = topicConfig ?? TopicValidator.loadBundledConfig()
         let prompt = buildPrompt(title: article.title, text: trimmedText, config: effectivePromptConfig)
+        
+        print("[ConversationEngine] generate – promptLength: \(prompt.count)")
         var raw: String
         do {
             raw = try await aiClient.complete(prompt: prompt)
+            print("[ConversationEngine] aiClient.complete (first) – responseLength: \(raw.count)")
         } catch {
+            print("[ConversationEngine] aiClient.complete (first) failed – \(error.localizedDescription)")
             throw ConversationEngineError.aiFailed(error)
         }
-        if let result = parseResponse(raw, config: effectiveTopicConfig) { return result }
+        if let result = parseResponse(raw, config: effectiveTopicConfig) {
+            print("[ConversationEngine] parseResponse success (first)")
+            return result
+        }
+        print("[ConversationEngine] parseResponse failed, retrying with retrySuffix")
         let retryPrompt = prompt + "\n\n" + effectivePromptConfig.retrySuffix
         do {
             raw = try await aiClient.complete(prompt: retryPrompt)
+            print("[ConversationEngine] aiClient.complete (retry) – responseLength: \(raw.count)")
         } catch {
+            print("[ConversationEngine] aiClient.complete (retry) failed – \(error.localizedDescription)")
             throw ConversationEngineError.aiFailed(error)
         }
-        if let result = parseResponse(raw, config: effectiveTopicConfig) { return result }
+        if let result = parseResponse(raw, config: effectiveTopicConfig) {
+            print("[ConversationEngine] parseResponse success (retry)")
+            return result
+        }
+        print("[ConversationEngine] parseResponse failed – invalidJSON")
         throw ConversationEngineError.invalidJSON
     }
 
@@ -156,7 +170,7 @@ private struct AIResponse: Decodable {
                   let what = f.whatToVerify?.trimmingCharacters(in: .whitespaces), !what.isEmpty else { return nil }
             return FactCheck(claim: claim, whatToVerify: what)
         }
-
+        print("[ConversationEngine] parseResponse – summary: \(summaryModel), topics: \(validatedTopics), factChecks: \(factChecksModel)")
         return CompanionResult(summary: summaryModel, topics: validatedTopics, factChecks: factChecksModel)
     }
 }

@@ -28,14 +28,25 @@ public final class ArticleFetcher: ArticleFetching, @unchecked Sendable {
     public func fetch(url: URL) async throws -> ArticleContent {
         if let custom = customFetcher {
             do {
-                return try await custom.fetch(url: url)
+                let content = try await custom.fetch(url: url)
+                print("[ArticleFetcher] fetched via customFetcher – url: \(url.absoluteString) title: \(content.title.prefix(40))... textLength: \(content.text.count)")
+                return content
             } catch {
+                print("[ArticleFetcher] customFetcher failed, falling back to HTML – \(error.localizedDescription)")
                 // Fall through to HTML extraction
             }
         }
-        if let cached = getFromMemoryCache(url: url) { return cached }
-        if let cached = await getFromDiskCache(url: url) { return cached }
+        if let cached = getFromMemoryCache(url: url) {
+            print("[ArticleFetcher] cache hit (memory) – url: \(url.absoluteString) title: \(cached.title.prefix(40))... textLength: \(cached.text.count)")
+            return cached
+        }
+        if let cached = await getFromDiskCache(url: url) {
+            print("[ArticleFetcher] cache hit (disk) – url: \(url.absoluteString) title: \(cached.title.prefix(40))... textLength: \(cached.text.count)")
+            return cached
+        }
+        print("[ArticleFetcher] fetching from network – url: \(url.absoluteString)")
         let content = try await extractFromHTML(url: url)
+        print("[ArticleFetcher] extracted from HTML – title: \(content.title.prefix(40))... textLength: \(content.text.count)")
         setMemoryCache(url: url, content: content)
         await setDiskCache(url: url, content: content)
         return content
@@ -46,9 +57,38 @@ public final class ArticleFetcher: ArticleFetching, @unchecked Sendable {
     private func extractFromHTML(url: URL) async throws -> ArticleContent {
         var request = URLRequest(url: url)
         request.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1", forHTTPHeaderField: "User-Agent")
-        let (data, _) = try await URLSession.shared.data(for: request)
-        guard let html = String(data: data, encoding: .utf8) else { throw ArticleFetcherError.invalidHTML }
+        let data: Data
+        do {
+            (data, _) = try await URLSession.shared.data(for: request)
+        } catch {
+            Self.logNetworkError(error, url: url)
+            throw error
+        }
+        guard let html = String(data: data, encoding: .utf8) else {
+            print("[ArticleFetcher] extractFromHTML failed – invalidHTML (data length: \(data.count))")
+            throw ArticleFetcherError.invalidHTML
+        }
         return try parseHTML(html, url: url)
+    }
+
+    private static func logNetworkError(_ error: Error, url: URL) {
+        let ns = error as NSError
+        print("[ArticleFetcher] NETWORK ERROR – domain: \(ns.domain) code: \(ns.code) description: \(error.localizedDescription)")
+        if let urlError = error as? URLError {
+            let codeDesc: String = {
+                switch urlError.code {
+                case .timedOut: return "timedOut"
+                case .cannotConnectToHost: return "cannotConnectToHost"
+                case .cannotFindHost: return "cannotFindHost"
+                case .networkConnectionLost: return "networkConnectionLost"
+                case .notConnectedToInternet: return "notConnectedToInternet"
+                case .secureConnectionFailed: return "secureConnectionFailed (SSL/TLS)"
+                default: return "\(urlError.code.rawValue)"
+                }
+            }()
+            print("[ArticleFetcher] URLError – code: \(codeDesc) failingURL: \(urlError.failingURL?.absoluteString ?? "nil")")
+        }
+        print("[ArticleFetcher] request URL was: \(url.absoluteString)")
     }
 
     private func parseHTML(_ html: String, url: URL) throws -> ArticleContent {

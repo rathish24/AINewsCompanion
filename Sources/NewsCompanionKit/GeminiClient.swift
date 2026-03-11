@@ -16,6 +16,7 @@ public final class GeminiClient: AICompleting, Sendable {
     public func complete(prompt: String) async throws -> String {
         // Per https://ai.google.dev/gemini-api/docs: v1beta, x-goog-api-key header.
         let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent")!
+        print("[GeminiClient] request – model: \(model) promptLength: \(prompt.count)")
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -32,12 +33,18 @@ public final class GeminiClient: AICompleting, Sendable {
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse else { throw AIClientError.invalidResponse }
+        guard let http = response as? HTTPURLResponse else {
+            print("[GeminiClient] invalid response (not HTTPURLResponse)")
+            throw AIClientError.invalidResponse
+        }
         if http.statusCode != 200 {
             let msg = Self.parseAPIErrorBody(data, statusCode: http.statusCode)
+            print("[GeminiClient] HTTP \(http.statusCode) – \(msg)")
             throw AIClientError.apiError(msg)
         }
-        return try parseGeminiResponse(data)
+        let content = try parseGeminiResponse(data)
+        print("[GeminiClient] success – responseLength: \(content.count)")
+        return content
     }
 
     /// Parses Google API error JSON: { "error": { "message": "...", "status": "..." } } or similar.

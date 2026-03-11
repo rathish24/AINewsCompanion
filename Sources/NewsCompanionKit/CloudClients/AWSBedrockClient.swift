@@ -58,7 +58,11 @@ public final class AWSBedrockClient: AICompleting, Sendable {
     public func complete(prompt: String) async throws -> String {
         // Bedrock InvokeModel path; for a custom proxy, endpoint may already include path.
         let urlString = endpoint.contains("amazonaws.com") ? "\(endpoint)/model/\(modelId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? modelId)/invoke" : endpoint
-        guard let url = URL(string: urlString) else { throw AIClientError.apiError("Invalid AWS endpoint URL") }
+        guard let url = URL(string: urlString) else {
+            print("[AWSBedrockClient] invalid URL – endpoint: \(endpoint.prefix(60))...")
+            throw AIClientError.apiError("Invalid AWS endpoint URL")
+        }
+        print("[AWSBedrockClient] request – url: \(url.absoluteString.prefix(80))... modelId: \(modelId) promptLength: \(prompt.count)")
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -82,11 +86,18 @@ public final class AWSBedrockClient: AICompleting, Sendable {
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse else { throw AIClientError.invalidResponse }
-        if http.statusCode != 200 {
-            throw AIClientError.apiError(Self.parseError(data, statusCode: http.statusCode))
+        guard let http = response as? HTTPURLResponse else {
+            print("[AWSBedrockClient] invalid response (not HTTPURLResponse)")
+            throw AIClientError.invalidResponse
         }
-        return try Self.parseBedrockResponse(data)
+        if http.statusCode != 200 {
+            let msg = Self.parseError(data, statusCode: http.statusCode)
+            print("[AWSBedrockClient] HTTP \(http.statusCode) – \(msg)")
+            throw AIClientError.apiError(msg)
+        }
+        let content = try Self.parseBedrockResponse(data)
+        print("[AWSBedrockClient] success – responseLength: \(content.count)")
+        return content
     }
 
     private static func parseBedrockResponse(_ data: Data) throws -> String {

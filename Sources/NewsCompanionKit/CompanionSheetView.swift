@@ -123,21 +123,26 @@ public struct CompanionSheetView: View {
     private func load() async {
         startTime = Date()
         onTelemetry?(.aiIconClicks)
+        print("[CompanionSheet] load started – url: \(url.absoluteString) provider: \(config.provider.displayName)")
         do {
             let result: CompanionResult
             if let fetch = generateCompanion {
+                print("[CompanionSheet] using generateCompanion closure (cache-first)")
                 result = try await fetch(url)
             } else {
+                print("[CompanionSheet] using NewsCompanionKit.generate(url:config:)")
                 result = try await NewsCompanionKit.generate(url: url, config: config)
             }
             if let start = startTime {
                 onTelemetry?(.timeToSummary(seconds: Date().timeIntervalSince(start)))
             }
             onTelemetry?(.summaryCompletionRate(success: true))
+            print("[CompanionSheet] load succeeded – oneLiner: \(result.summary.oneLiner.prefix(60))...")
             viewState = .loaded(result)
             onCompanionLoaded?(result)
         } catch {
             onTelemetry?(.summaryCompletionRate(success: false))
+            print("[CompanionSheet] load failed – error: \(error.localizedDescription)")
             viewState = .failed(failureMessage(for: error))
         }
     }

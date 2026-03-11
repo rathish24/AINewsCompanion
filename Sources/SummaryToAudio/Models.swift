@@ -3,11 +3,13 @@ import Foundation
 public enum TTSProvider: String, CaseIterable, Sendable, Codable {
     case sarvam
     case elevenLabs
+    case azure
 
     public var displayName: String {
         switch self {
         case .sarvam: return "Sarvam AI"
         case .elevenLabs: return "ElevenLabs"
+        case .azure: return "Azure"
         }
     }
 }
@@ -106,15 +108,96 @@ public enum ElevenLabsLanguage: String, CaseIterable, Sendable, Codable {
     public var languageCode: String { rawValue }
 }
 
+// MARK: - Azure Speech: locales and default neural voices (used when TTS provider is Azure)
+public enum AzureSpeechLanguage: String, CaseIterable, Sendable, Codable {
+    case englishUS = "en-US"
+    case englishGB = "en-GB"
+    case french = "fr-FR"
+    case german = "de-DE"
+    case spanish = "es-ES"
+    case italian = "it-IT"
+    case portugueseBR = "pt-BR"
+    case hindi = "hi-IN"
+    case tamil = "ta-IN"
+    case telugu = "te-IN"
+    case japanese = "ja-JP"
+    case korean = "ko-KR"
+    case chineseMandarin = "zh-CN"
+    case arabic = "ar-SA"
+    case dutch = "nl-NL"
+    case polish = "pl-PL"
+    case russian = "ru-RU"
+    case turkish = "tr-TR"
+
+    public var displayName: String {
+        switch self {
+        case .englishUS: return "English (US)"
+        case .englishGB: return "English (GB)"
+        case .french: return "French"
+        case .german: return "German"
+        case .spanish: return "Spanish"
+        case .italian: return "Italian"
+        case .portugueseBR: return "Portuguese (BR)"
+        case .hindi: return "Hindi"
+        case .tamil: return "Tamil"
+        case .telugu: return "Telugu"
+        case .japanese: return "Japanese"
+        case .korean: return "Korean"
+        case .chineseMandarin: return "Chinese (Mandarin)"
+        case .arabic: return "Arabic"
+        case .dutch: return "Dutch"
+        case .polish: return "Polish"
+        case .russian: return "Russian"
+        case .turkish: return "Turkish"
+        }
+    }
+
+    /// Locale for Azure TTS (SSML voice selection).
+    public var locale: String { rawValue }
+
+    /// ISO 639-1 style code for translation API (e.g. "en", "fr", "ta"). Used as cache key and for Azure Translator target.
+    public var languageCode: String {
+        String(rawValue.prefix(2))
+    }
+
+    /// Default neural voice short name for this locale (Azure Speech Service).
+    public var defaultVoiceShortName: String {
+        switch self {
+        case .englishUS: return "en-US-JennyNeural"
+        case .englishGB: return "en-GB-SoniaNeural"
+        case .french: return "fr-FR-DeniseNeural"
+        case .german: return "de-DE-KatjaNeural"
+        case .spanish: return "es-ES-ElviraNeural"
+        case .italian: return "it-IT-ElsaNeural"
+        case .portugueseBR: return "pt-BR-FranciscaNeural"
+        case .hindi: return "hi-IN-SwaraNeural"
+        case .tamil: return "ta-IN-PallaviNeural"
+        case .telugu: return "te-IN-ShrutiNeural"
+        case .japanese: return "ja-JP-NanamiNeural"
+        case .korean: return "ko-KR-SunHiNeural"
+        case .chineseMandarin: return "zh-CN-XiaoxiaoNeural"
+        case .arabic: return "ar-SA-ZariyahNeural"
+        case .dutch: return "nl-NL-ColetteNeural"
+        case .polish: return "pl-PL-ZofiaNeural"
+        case .russian: return "ru-RU-SvetlanaNeural"
+        case .turkish: return "tr-TR-EmelNeural"
+        }
+    }
+
+    public static var english: AzureSpeechLanguage { .englishUS }
+}
+
 // MARK: - Provider-agnostic effective language (avoids coupling TTS clients)
 public enum EffectiveTTSLanguage: Sendable {
     case sarvam(SpeechLanguage)
     case elevenLabs(ElevenLabsLanguage)
+    case azure(AzureSpeechLanguage)
 
     public var cacheKey: String {
         switch self {
         case .sarvam(let lang): return lang.languageCode
         case .elevenLabs(let lang): return lang.languageCode
+        case .azure(let lang): return lang.languageCode
         }
     }
 
@@ -122,6 +205,7 @@ public enum EffectiveTTSLanguage: Sendable {
         switch self {
         case .sarvam(let lang): return lang.displayName
         case .elevenLabs(let lang): return lang.displayName
+        case .azure(let lang): return lang.displayName
         }
     }
 
@@ -129,6 +213,7 @@ public enum EffectiveTTSLanguage: Sendable {
         switch self {
         case .sarvam(let lang): return lang == .english
         case .elevenLabs(let lang): return lang == .english
+        case .azure(let lang): return lang == .englishUS || lang == .englishGB
         }
     }
 
@@ -137,14 +222,16 @@ public enum EffectiveTTSLanguage: Sendable {
         switch self {
         case .sarvam: return .sarvam
         case .elevenLabs: return .elevenLabs
+        case .azure: return .azure
         }
     }
 
-    /// Cache key to use when translation fails and we fall back to English (cached or source). Sarvam: "en-IN"; ElevenLabs: "en".
+    /// Cache key to use when translation fails and we fall back to English (cached or source). Sarvam: "en-IN"; ElevenLabs: "en"; Azure: "en".
     public var englishCacheKeyForFallback: String {
         switch self {
         case .sarvam: return SpeechLanguage.english.languageCode
         case .elevenLabs: return ElevenLabsLanguage.english.languageCode
+        case .azure: return AzureSpeechLanguage.englishUS.languageCode
         }
     }
 }
@@ -153,10 +240,15 @@ public struct SpeechConfig: Sendable {
     public var provider: TTSProvider
     public var sarvamApiKey: String?
     public var elevenLabsApiKey: String?
+    /// Used when provider is .azure: Speech resource key and region (e.g. "eastus").
+    public var azureSpeechKey: String?
+    public var azureSpeechRegion: String?
     /// Used when provider is .sarvam.
     public var sarvamLanguage: SpeechLanguage
     /// Used when provider is .elevenLabs.
     public var elevenLabsLanguage: ElevenLabsLanguage
+    /// Used when provider is .azure.
+    public var azureLanguage: AzureSpeechLanguage
     public var voice: String
     public var rate: Double
 
@@ -164,16 +256,22 @@ public struct SpeechConfig: Sendable {
         provider: TTSProvider = .elevenLabs,
         sarvamApiKey: String? = nil,
         elevenLabsApiKey: String? = nil,
+        azureSpeechKey: String? = nil,
+        azureSpeechRegion: String? = nil,
         sarvamLanguage: SpeechLanguage = .english,
         elevenLabsLanguage: ElevenLabsLanguage = .english,
+        azureLanguage: AzureSpeechLanguage = .englishUS,
         voice: String = "Rachel",
         rate: Double = 1.0
     ) {
         self.provider = provider
         self.sarvamApiKey = sarvamApiKey
         self.elevenLabsApiKey = elevenLabsApiKey
+        self.azureSpeechKey = azureSpeechKey
+        self.azureSpeechRegion = azureSpeechRegion
         self.sarvamLanguage = sarvamLanguage
         self.elevenLabsLanguage = elevenLabsLanguage
+        self.azureLanguage = azureLanguage
         self.voice = voice
         self.rate = rate
     }
@@ -183,6 +281,7 @@ public struct SpeechConfig: Sendable {
         switch provider {
         case .sarvam: return .sarvam(sarvamLanguage)
         case .elevenLabs: return .elevenLabs(elevenLabsLanguage)
+        case .azure: return .azure(azureLanguage)
         }
     }
 }

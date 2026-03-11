@@ -10,10 +10,13 @@ public final class SummaryToAudio: ObservableObject {
     
     private let sarvamClient = SarvamAIClient()
     private let elevenLabsClient = ElevenLabsClient()
+    private let azureSpeechClient = AzureSpeechClient()
     private let translationAPIClient = TranslationAPIClient()
     private var cancellables = Set<AnyCancellable>()
     /// When set, used to translate text for ElevenLabs non-English (overrides built-in translation API).
     private var elevenLabsTranslator: (@Sendable (String, String) async throws -> String)?
+    /// When set, used to translate text for Azure non-English (e.g. Azure Translator).
+    private var azureTranslator: (@Sendable (String, String) async throws -> String)?
 
     private var lastAudioData: Data?
     private var lastText: String?
@@ -40,8 +43,11 @@ public final class SummaryToAudio: ObservableObject {
         provider: TTSProvider? = nil,
         elevenLabsKey: String? = nil,
         sarvamKey: String? = nil,
+        azureSpeechKey: String? = nil,
+        azureSpeechRegion: String? = nil,
         sarvamLanguage: SpeechLanguage? = nil,
         elevenLabsLanguage: ElevenLabsLanguage? = nil,
+        azureLanguage: AzureSpeechLanguage? = nil,
         libreTranslateBaseURL: String? = nil,
         libreTranslateAPIKey: String? = nil
     ) {
@@ -54,8 +60,11 @@ public final class SummaryToAudio: ObservableObject {
         }
         if let key = elevenLabsKey { config.elevenLabsApiKey = key }
         if let key = sarvamKey { config.sarvamApiKey = key }
+        if let key = azureSpeechKey { config.azureSpeechKey = key }
+        if let region = azureSpeechRegion { config.azureSpeechRegion = region }
         if let lang = sarvamLanguage { config.sarvamLanguage = lang }
         if let lang = elevenLabsLanguage { config.elevenLabsLanguage = lang }
+        if let lang = azureLanguage { config.azureLanguage = lang }
         
         Task {
             if let sarvamKey = config.sarvamApiKey {
@@ -63,6 +72,9 @@ public final class SummaryToAudio: ObservableObject {
             }
             if let elevenLabsKey = config.elevenLabsApiKey {
                 await elevenLabsClient.configure(apiKey: elevenLabsKey)
+            }
+            if let azureKey = config.azureSpeechKey, let region = config.azureSpeechRegion, !region.isEmpty {
+                await azureSpeechClient.configure(subscriptionKey: azureKey, region: region)
             }
             await translationAPIClient.configure(libreTranslateBaseURL: libreTranslateBaseURL, libreTranslateAPIKey: libreTranslateAPIKey)
         }
@@ -73,15 +85,23 @@ public final class SummaryToAudio: ObservableObject {
         elevenLabsTranslator = translator
     }
 
+    /// Set a translator used when Azure is selected and language is not English. Closure receives (text, languageCode) and returns translated text (languageCode is ISO 639-1 e.g. "fr", "ta").
+    public func setAzureTranslator(_ translator: (@Sendable (String, String) async throws -> String)?) {
+        azureTranslator = translator
+    }
+
     /// Returns the text that should be sent to TTS for the given effective language.
     /// Sarvam: uses only Sarvam's internal translate API (sarvamClient.translate). No TranslationAPIClient or ElevenLabs.
     /// ElevenLabs: English → pass-through; non-English → translation API (custom translator if set, else TranslationAPIClient). No Sarvam.
+    /// Azure: English → pass-through; non-English → custom translator if set (e.g. Azure Translator), else error.
     public func translateIfNeeded(text: String, effectiveLanguage: EffectiveTTSLanguage) async throws -> String {
         switch effectiveLanguage {
         case .sarvam(let lang):
             return try await textForSarvamTTS(sourceText: text, language: lang)
         case .elevenLabs(let lang):
             return try await textForElevenLabsTTS(sourceText: text, language: lang)
+        case .azure(let lang):
+            return try await textForAzureTTS(sourceText: text, language: lang)
         }
     }
 
@@ -102,6 +122,15 @@ public final class SummaryToAudio: ObservableObject {
             return try await translate(sourceText, language.languageCode)
         }
         return try await translationAPIClient.translate(text: sourceText, targetLanguageCode: language.languageCode)
+    }
+
+    /// Azure-only path: returns text ready for Azure TTS. English (en-US/en-GB) → pass-through; non-English → Azure Translator or custom translator. Summary is always generated in English; translate en → selected language.
+    private func textForAzureTTS(sourceText: String, language: AzureSpeechLanguage) async throws -> String {
+        if language == .englishUS || language == .englishGB { return sourceText }
+        guard let translate = azureTranslator else {
+            throw NSError(domain: "SummaryToAudio", code: -1, userInfo: [NSLocalizedDescriptionKey: "Azure Translator not configured. Set Azure translation (e.g. Azure Translator) for non-English Azure TTS."])
+        }
+        return try await translate(sourceText, language.languageCode)
     }
 
     /// Plays the given text as speech. When `textIsAlreadyTranslated` is true, `text` is used as the final script for TTS (no translation step); use this when you have cached translated text.
@@ -139,6 +168,10 @@ public final class SummaryToAudio: ObservableObject {
                 // ElevenLabs-only: TTS via ElevenLabs; translation (when needed) is done above via textForElevenLabsTTS (translation API or custom translator). No Sarvam.
                 print("SummaryToAudio: Using ElevenLabs (multilingual) lang=\(lang.languageCode)")
                 audioData = try await elevenLabsClient.generateSpeech(text: textToSpeak, languageCode: lang.languageCode)
+            case (.azure, .azure(let lang)):
+                // Azure-only: TTS via Azure Speech; translation (when needed) is done above via textForAzureTTS (Azure Translator or custom). Pass locale for voice selection.
+                print("SummaryToAudio: Using Azure Speech lang=\(lang.locale)")
+                audioData = try await azureSpeechClient.generateSpeech(text: textToSpeak, languageCode: lang.locale)
             default:
                 fatalError("Provider and effective language must match")
             }

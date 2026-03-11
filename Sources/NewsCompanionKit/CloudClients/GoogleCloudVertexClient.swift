@@ -38,7 +38,11 @@ public final class GoogleCloudVertexClient: AICompleting, Sendable {
     public func complete(prompt: String) async throws -> String {
         let path = "v1/projects/\(project)/locations/\(location)/publishers/google/models/\(model):generateContent"
         let urlString = "https://\(location)-aiplatform.googleapis.com/\(path)"
-        guard let url = URL(string: urlString) else { throw AIClientError.apiError("Invalid Vertex AI URL") }
+        guard let url = URL(string: urlString) else {
+            print("[GoogleCloudVertexClient] invalid URL")
+            throw AIClientError.apiError("Invalid Vertex AI URL")
+        }
+        print("[GoogleCloudVertexClient] request – project: \(project) location: \(location) model: \(model) promptLength: \(prompt.count)")
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -60,11 +64,18 @@ public final class GoogleCloudVertexClient: AICompleting, Sendable {
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse else { throw AIClientError.invalidResponse }
-        if http.statusCode != 200 {
-            throw AIClientError.apiError(Self.parseError(data, statusCode: http.statusCode))
+        guard let http = response as? HTTPURLResponse else {
+            print("[GoogleCloudVertexClient] invalid response (not HTTPURLResponse)")
+            throw AIClientError.invalidResponse
         }
-        return try Self.parseVertexResponse(data)
+        if http.statusCode != 200 {
+            let msg = Self.parseError(data, statusCode: http.statusCode)
+            print("[GoogleCloudVertexClient] HTTP \(http.statusCode) – \(msg)")
+            throw AIClientError.apiError(msg)
+        }
+        let content = try Self.parseVertexResponse(data)
+        print("[GoogleCloudVertexClient] success – responseLength: \(content.count)")
+        return content
     }
 
     private static func parseVertexResponse(_ data: Data) throws -> String {

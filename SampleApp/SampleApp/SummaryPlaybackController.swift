@@ -7,13 +7,13 @@ import SummaryToAudio
 ///
 /// Comparison (English vs non-English) — same flow shape, different translation source and cache keys:
 ///
-/// | Aspect              | Sarvam (non-English)                    | ElevenLabs (non-English)                          |
-/// |---------------------|------------------------------------------|---------------------------------------------------|
-/// | Cache key           | en-IN, ta-IN, hi-IN, te-IN, ml-IN, gu-IN | en, fr, de, ta, hi, ar, … (29 langs)              |
-/// | Translation source  | Sarvam API only (sarvamClient.translate) | Translation API or custom translator              |
-/// | Stale cache check   | If cached == source → delete, don't use   | Same                                              |
-/// | Translation failure | Fallback: cached "en-IN" or fullText     | Fallback: cached "en" or fullText                 |
-/// | Play on failure     | .sarvam(.english)                        | .elevenLabs(.english)                             |
+/// | Aspect              | Sarvam (non-English)                    | ElevenLabs (non-English)                          | Azure (non-English)                    |
+/// |---------------------|------------------------------------------|---------------------------------------------------|----------------------------------------|
+/// | Cache key           | en-IN, ta-IN, hi-IN, …                   | en, fr, de, ta, … (29 langs)                      | en, fr, ta, hi, … (Azure locales)       |
+/// | Translation source  | Sarvam API only                         | Translation API or custom translator              | Azure Translator or setAzureTranslator  |
+/// | Stale cache check   | If cached == source → delete, don't use | Same                                              | Same                                    |
+/// | Translation failure | Fallback: cached "en-IN" or fullText    | Fallback: cached "en" or fullText                 | Fallback: cached "en" or fullText       |
+/// | Play on failure     | .sarvam(.english)                       | .elevenLabs(.english)                             | .azure(.englishUS)                      |
 @MainActor
 final class SummaryPlaybackController: ObservableObject {
     @Published private(set) var playingURL: URL?
@@ -189,7 +189,11 @@ final class SummaryPlaybackController: ObservableObject {
                     textToSpeak = fullText
                     print("[TTS] Fallback: using source text (English) | url: \(url.absoluteString) | chars: \(textToSpeak.count)")
                 }
-                effectiveForPlay = effectiveLanguage.provider == .sarvam ? .sarvam(.english) : .elevenLabs(.english)
+                switch effectiveLanguage.provider {
+                case .sarvam: effectiveForPlay = .sarvam(.english)
+                case .elevenLabs: effectiveForPlay = .elevenLabs(.english)
+                case .azure: effectiveForPlay = .azure(.englishUS)
+                }
                 translationSucceeded = false
                 TranslationCache.delete(url: url, languageCode: langKey, modelContext: modelContext)
             }

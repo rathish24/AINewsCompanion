@@ -18,6 +18,13 @@ final class SummaryToAudioTests: XCTestCase {
         XCTAssertEqual(config.effectiveLanguage().cacheKey, "hi-IN")
         let configEL = SpeechConfig(provider: .elevenLabs, sarvamLanguage: .tamil, elevenLabsLanguage: .german, rate: 1.0)
         XCTAssertEqual(configEL.effectiveLanguage().cacheKey, "de")
+        let configAzure = SpeechConfig(provider: .azure, azureLanguage: .tamil)
+        XCTAssertEqual(configAzure.effectiveLanguage().cacheKey, "ta")
+        if case .azure(let lang) = configAzure.effectiveLanguage() {
+            XCTAssertEqual(lang, .tamil)
+        } else {
+            XCTFail("Expected .azure(.tamil)")
+        }
     }
 
     func testElevenLabsLanguageCodes() {
@@ -37,6 +44,9 @@ final class SummaryToAudioTests: XCTestCase {
         XCTAssertFalse(EffectiveTTSLanguage.sarvam(.hindi).isEnglish)
         XCTAssertTrue(EffectiveTTSLanguage.elevenLabs(.english).isEnglish)
         XCTAssertFalse(EffectiveTTSLanguage.elevenLabs(.french).isEnglish)
+        XCTAssertTrue(EffectiveTTSLanguage.azure(.englishUS).isEnglish)
+        XCTAssertTrue(EffectiveTTSLanguage.azure(.englishGB).isEnglish)
+        XCTAssertFalse(EffectiveTTSLanguage.azure(.french).isEnglish)
     }
 
     func testEffectiveTTSLanguageCacheKey() {
@@ -46,11 +56,15 @@ final class SummaryToAudioTests: XCTestCase {
         XCTAssertEqual(EffectiveTTSLanguage.elevenLabs(.english).cacheKey, "en")
         XCTAssertEqual(EffectiveTTSLanguage.elevenLabs(.french).cacheKey, "fr")
         XCTAssertEqual(EffectiveTTSLanguage.elevenLabs(.tamil).cacheKey, "ta")
+        XCTAssertEqual(EffectiveTTSLanguage.azure(.englishUS).cacheKey, "en")
+        XCTAssertEqual(EffectiveTTSLanguage.azure(.french).cacheKey, "fr")
+        XCTAssertEqual(EffectiveTTSLanguage.azure(.tamil).cacheKey, "ta")
     }
 
     func testEffectiveTTSLanguageProvider() {
         XCTAssertEqual(EffectiveTTSLanguage.sarvam(.tamil).provider, .sarvam)
         XCTAssertEqual(EffectiveTTSLanguage.elevenLabs(.french).provider, .elevenLabs)
+        XCTAssertEqual(EffectiveTTSLanguage.azure(.tamil).provider, .azure)
     }
 
     func testEffectiveTTSLanguageEnglishCacheKeyForFallback() {
@@ -58,6 +72,8 @@ final class SummaryToAudioTests: XCTestCase {
         XCTAssertEqual(EffectiveTTSLanguage.sarvam(.hindi).englishCacheKeyForFallback, "en-IN")
         XCTAssertEqual(EffectiveTTSLanguage.elevenLabs(.french).englishCacheKeyForFallback, "en")
         XCTAssertEqual(EffectiveTTSLanguage.elevenLabs(.german).englishCacheKeyForFallback, "en")
+        XCTAssertEqual(EffectiveTTSLanguage.azure(.tamil).englishCacheKeyForFallback, "en")
+        XCTAssertEqual(EffectiveTTSLanguage.azure(.french).englishCacheKeyForFallback, "en")
     }
     
     @MainActor

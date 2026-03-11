@@ -365,7 +365,14 @@ struct App2AudioView: View {
 
 ## SummaryToAudio & TTS
 
-The sample app can speak the companion summary via **ElevenLabs** or **Sarvam AI**.
+The sample app can speak the companion summary via **ElevenLabs**, **Sarvam AI**, or **Azure Speech Services**.
+
+### Flow (Azure with a non-English language)
+
+1. **English summary** – Summary is always generated in English from the article.
+2. **Translate** – If the selected language is not English (e.g. French, Tamil), the app uses **Azure Translator** (via `setAzureTranslator`) to translate English → selected language. Set `AZURE_SPEECH_KEY` / `AZURE_SPEECH_REGION` for TTS and `AZURE_TRANSLATOR_KEY` / `AZURE_TRANSLATOR_REGION` in `ApiKeys.xcconfig` (or use the same key/region if your Cognitive Services resource supports both).
+3. **Azure TTS** – The (translated or original) text is sent to **Azure Speech Services** REST API with the chosen locale and neural voice. Output is MP3.
+4. **Play** – Audio is played in the app. Translations are cached per URL + language.
 
 ### Flow (ElevenLabs with a non-English language)
 
@@ -381,21 +388,50 @@ The sample app can speak the companion summary via **ElevenLabs** or **Sarvam AI
 
 English, Arabic, Bulgarian, Chinese, Croatian, Czech, Danish, Dutch, Filipino, Finnish, French, German, Greek, Hindi, Indonesian, Italian, Japanese, Korean, Malay, Polish, Portuguese, Romanian, Russian, Slovak, Spanish, Swedish, Tamil, Turkish, Ukrainian.
 
-### Sarvam vs ElevenLabs (English and non-English)
+### Sarvam vs ElevenLabs vs Azure (English and non-English)
 
-Same flow shape for both providers; only the translation source and cache keys differ.
+Same flow shape for all providers; only the translation source and cache keys differ.
 
-| Aspect | Sarvam | ElevenLabs |
-|--------|--------|------------|
-| **English** | No translation; cache key `en-IN`; TTS via Sarvam. | No translation; cache key `en`; TTS via ElevenLabs. |
-| **Non-English** | Translation: **Sarvam API only** (`sarvamClient.translate`). Cache keys: `ta-IN`, `hi-IN`, `te-IN`, `ml-IN`, `gu-IN`. TTS: Sarvam. | Translation: **Translation API** (LibreTranslate / MyMemory) or custom translator. Cache keys: `fr`, `de`, `ta`, `hi`, etc. (29 langs). TTS: ElevenLabs. |
-| **Stale cache** | If cached text equals source (untranslated), entry is deleted and not used. | Same. |
-| **Translation failure** | Fallback: cached English (`en-IN`) or source text; play in English. | Fallback: cached English (`en`) or source text; play in English. |
+| Aspect | Sarvam | ElevenLabs | Azure |
+|--------|--------|------------|--------|
+| **English** | No translation; cache key `en-IN`; TTS via Sarvam. | No translation; cache key `en`; TTS via ElevenLabs. | No translation; cache key `en`; TTS via Azure Speech. |
+| **Non-English** | Translation: **Sarvam API only**. Cache keys: `ta-IN`, `hi-IN`, etc. TTS: Sarvam. | Translation: **Translation API** or custom. Cache keys: `fr`, `de`, `ta`, etc. TTS: ElevenLabs. | Translation: **Azure Translator** (or custom via `setAzureTranslator`). Cache keys: `fr`, `ta`, etc. TTS: Azure Speech. |
+| **Stale cache** | If cached text equals source, entry is deleted. | Same. | Same. |
+| **Translation failure** | Fallback: cached/source English; play in English. | Same. | Same. |
 
-Sarvam and ElevenLabs are decoupled: removing one does not require changes in the other’s client or translation path.
+Sarvam, ElevenLabs, and Azure are decoupled: removing one does not require changes in the others’ clients or translation paths.
+
+### Azure: article → summary (summarisation)
+
+The step “pass the article to Azure and get summarised text” is the **summarisation** step. It is implemented in **NewsCompanionKit**:
+
+1. The app fetches the article (URL → HTML → plain text).
+2. **NewsCompanionKit.generate(url:config:)** sends that text to the configured **AI provider**. When the provider is **Azure OpenAI** (`provider: .azureOpenAI`), the article is sent to your Azure OpenAI (or Azure AI Foundry OpenAI-compatible) endpoint, which returns the structured summary (one-liner, bullets, why it matters). That becomes `result.textForSpeech`, which is then passed to the TTS flow (optional translation → Azure Speech → play).
+
+So the implementation is correct: the article is passed to an Azure service for summarisation when you use the Azure OpenAI provider. The [Azure AI Foundry REST API](https://learn.microsoft.com/en-gb/rest/api/aifoundry/aiproject) (aiproject) is used for managing projects and deployments. Inference is typically via an **OpenAI-compatible chat completions** endpoint. If your model is deployed in **Azure AI Foundry**, use that endpoint as `azureEndpoint` (e.g. `https://<your-resource>.services.ai.azure.com` or the OpenAI-compatible path your project exposes) and the same API key–based auth; **AzureOpenAIClient** will work as long as the endpoint accepts the same request shape.
+
+**Python sample (Azure AI Projects) vs Swift (Azure OpenAI):** The Python sample using `AIProjectClient`, `DefaultAzureCredential`, and `responses.create(..., extra_body={"agent": ...})` targets **Azure AI Projects** (`*.services.ai.azure.com/api/projects/...`) with the **Responses API** and Entra ID. The Swift app uses **Azure OpenAI** (`*.openai.azure.com`) with **Chat Completions** and an **API key**. They are different APIs and endpoints. If your resource is only set up as an AI Project (with agents), you need either an OpenAI-compatible endpoint from that project or a separate Azure OpenAI resource with a deployment; the Swift client does not call the Responses API with agent reference.
+
+**Network and HTTP logging:** When a request fails, the console shows where it failed and why. Look for:
+- **`[ArticleFetcher] NETWORK ERROR`** – fetching the article URL failed (timeout, no connection, DNS, SSL, etc.). URLError code and `failingURL` are logged.
+- **`[AzureOpenAIClient] NETWORK ERROR`** – the Azure request failed before getting an HTTP response (timeout, cannot connect, etc.). Request URL and URLError code are logged.
+- **`[AzureOpenAIClient] HTTP 4xx/5xx`** – Azure returned an error status; the response body is logged (e.g. 404 Resource not found, 401/403 auth).
+
+### Azure credentials (summary)
+
+| Purpose | What you need | Where to set (Sample App) |
+|--------|----------------|---------------------------|
+| **Summarisation** (article → summary text) | Azure OpenAI or AI Foundry endpoint + API key + deployment name | `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT` in `ApiKeys.xcconfig`; app uses `provider: .azureOpenAI` and these for `Config`. |
+| **TTS** (summary → audio) | Speech Services key + region | `AZURE_SPEECH_KEY`, `AZURE_SPEECH_REGION` in `ApiKeys.xcconfig`. |
+| **Translation** (English → selected language for Azure TTS) | Translator key + region (can be same Cognitive Services resource) | `AZURE_TRANSLATOR_KEY`, `AZURE_TRANSLATOR_REGION` in `ApiKeys.xcconfig`. |
+
+- **Summarisation**: Create an Azure OpenAI resource (or AI Foundry project with an OpenAI-compatible deployment). Use the resource/project **endpoint** (e.g. `https://your-resource.openai.azure.com` or your Foundry base URL), **API key**, and **deployment/model name**. The Sample App reads these from Info.plist (injected from `ApiKeys.xcconfig`).
+- **TTS**: Create a Speech resource (or use a multi-service Cognitive Services resource). Key + region (e.g. `eastus`).
+- **Translation**: Translator resource (or same Cognitive Services resource). Key + region. Required only when using Azure TTS with a non-English language.
 
 ### Optional config
 
+- **Azure Speech (App 2)**: Set `AZURE_SPEECH_KEY` and `AZURE_SPEECH_REGION` (e.g. `eastus`) in `ApiKeys.xcconfig` for Azure TTS. For non-English Azure TTS, also set `AZURE_TRANSLATOR_KEY` and `AZURE_TRANSLATOR_REGION` (or use the same key/region if your resource supports both).
 - **LibreTranslate**: In `ApiKeys.xcconfig` (or Info.plist), set `LIBRETRANSLATE_URL` (e.g. `https://libretranslate.com`) and optionally `LIBRETRANSLATE_API_KEY` for better translation quality and no chunking.
 - **Translation failure**: If translation fails (e.g. network), the user sees “Translation failed. Playing in English.” and the original English is spoken.
 

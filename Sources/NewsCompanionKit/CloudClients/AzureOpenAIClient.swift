@@ -2,6 +2,7 @@ import Foundation
 
 /// Azure OpenAI client for article-to-summary. Use your Azure OpenAI resource endpoint and deployment (model) name.
 /// Conforms to `AICompleting`; pass the deployment name as the model you have available on your Azure server.
+/// The prompt is built by ConversationEngine from conversation.json; response validation uses topics.json (same as Groq/OpenAI).
 /// API key can be empty for local validation; requests will fail at runtime until you provide a valid key.
 public final class AzureOpenAIClient: AICompleting, Sendable {
 
@@ -27,7 +28,7 @@ public final class AzureOpenAIClient: AICompleting, Sendable {
         apiVersion: String = "2024-02-15",
         additionalHeaders: [String: String]? = nil
     ) {
-        self.endpoint = endpoint.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        self.endpoint = endpoint.trimmingCharacters(in: .whitespacesAndNewlines)
         self.deployment = deployment
         self.apiKey = apiKey
         self.timeout = timeout
@@ -36,44 +37,61 @@ public final class AzureOpenAIClient: AICompleting, Sendable {
     }
 
     public func complete(prompt: String) async throws -> String {
-        let urlString = "\(endpoint)/openai/deployments/\(deployment.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? deployment)/chat/completions?api-version=\(apiVersion)"
-        guard let url = URL(string: urlString) else { throw AIClientError.apiError("Invalid Azure OpenAI endpoint URL") }
-
-        var request = URLRequest(url: url)
+       
+        let url1 = URL(string: "https://rathishk24-2173-text-su-resource.openai.azure.com/openai/v1/chat/completions")!
+        var request = URLRequest(url: url1)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(apiKey, forHTTPHeaderField: "api-key")
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.timeoutInterval = timeout
         additionalHeaders?.forEach { request.setValue($1, forHTTPHeaderField: $0) }
 
+        // Same structure as GroqClient/OpenAIClient: model, temperature, max_tokens, response_format, messages
         let body: [String: Any] = [
+            "model": deployment,
+            "temperature": 0.2,
+            "max_tokens": 4096,
+            "response_format": ["type": "json_object"],
             "messages": [
                 ["role": "system", "content": "You are a precise news companion. Always respond with valid JSON only."],
                 ["role": "user", "content": prompt]
-            ],
-            "temperature": 0.2,
-            "max_tokens": 4096,
-            "response_format": ["type": "json_object"]
+            ]
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse else { throw AIClientError.invalidResponse }
+        guard let http = response as? HTTPURLResponse else {
+            throw AIClientError.invalidResponse
+        }
+        print("[AzureOpenAIClient] HTTP \(http.statusCode) – responseLength: \(data.count)")
         if http.statusCode != 200 {
-            throw AIClientError.apiError(Self.parseError(data, statusCode: http.statusCode))
+            let errMsg = Self.parseError(data, statusCode: http.statusCode)
+            throw AIClientError.apiError(errMsg)
         }
         return try Self.parseResponse(data)
     }
 
+    /// Same parsing as GroqClient: extract choices[0].message.content (string). Fallback for content-as-array for Azure compatibility.
     private static func parseResponse(_ data: Data) throws -> String {
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let choices = json["choices"] as? [[String: Any]],
               let first = choices.first,
-              let message = first["message"] as? [String: Any],
-              let content = message["content"] as? String else {
+              let message = first["message"] as? [String: Any] else {
             throw AIClientError.invalidResponse
         }
-        return content.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trim = { (s: String) in s.trimmingCharacters(in: .whitespacesAndNewlines) }
+        if let contentString = message["content"] as? String {
+            return trim(contentString)
+        }
+        if let contentParts = message["content"] as? [[String: Any]] {
+            let textParts = contentParts.compactMap { part -> String? in
+                guard part["type"] as? String == "text", let text = part["text"] as? String else { return nil }
+                return text
+            }
+            let joined = textParts.joined()
+            if !joined.isEmpty { return trim(joined) }
+        }
+        throw AIClientError.invalidResponse
     }
 
     private static func parseError(_ data: Data, statusCode: Int) -> String {

@@ -17,6 +17,8 @@
 		A1B1C1D10010 /* SharedAppData.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B1C1D20010 /* SharedAppData.swift */; };
 		A1B1C1D10011 /* App1ListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B1C1D20011 /* App1ListView.swift */; };
 		A1B1C1D10012 /* App2ListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B1C1D20012 /* App2ListView.swift */; };
+		A1B1C1D10013 /* TranslationClients in Frameworks */ = {isa = PBXBuildFile; productRef = A1B1C1D50004 /* TranslationClients */; };
+		A1B1C1D10014 /* ApiKeys.xcconfig in Resources */ = {isa = PBXBuildFile; fileRef = BB591B6B2F5F253C00CEC212 /* ApiKeys.xcconfig */; };
 		BB591B612F5B4EAE00CEC212 /* NewsCompanionKit in Frameworks */ = {isa = PBXBuildFile; productRef = A1B1C1D50002 /* NewsCompanionKit */; };
 /* End PBXBuildFile section */
 
@@ -31,6 +33,7 @@
 		A1B1C1D20010 /* SharedAppData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedAppData.swift; sourceTree = "<group>"; };
 		A1B1C1D20011 /* App1ListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App1ListView.swift; sourceTree = "<group>"; };
 		A1B1C1D20012 /* App2ListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App2ListView.swift; sourceTree = "<group>"; };
+		BB591B6B2F5F253C00CEC212 /* ApiKeys.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = ApiKeys.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -40,6 +43,7 @@
 			files = (
 				BB591B612F5B4EAE00CEC212 /* NewsCompanionKit in Frameworks */,
 				A1B1C1D10008 /* SummaryToAudio in Frameworks */,
+				A1B1C1D10013 /* TranslationClients in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -57,6 +61,7 @@
 		A1B1C1D60002 /* SampleApp */ = {
 			isa = PBXGroup;
 			children = (
+				BB591B6B2F5F253C00CEC212 /* ApiKeys.xcconfig */,
 				A1B1C1D20001 /* SampleAppApp.swift */,
 				A1B1C1D20002 /* ContentView.swift */,
 				A1B1C1D20010 /* SharedAppData.swift */,
@@ -98,6 +103,7 @@
 			packageProductDependencies = (
 				A1B1C1D50002 /* NewsCompanionKit */,
 				A1B1C1D50003 /* SummaryToAudio */,
+				A1B1C1D50004 /* TranslationClients */,
 			);
 			productName = SampleApp;
 			productReference = A1B1C1D20000 /* SampleApp.app */;
@@ -139,6 +145,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A1B1C1D10014 /* ApiKeys.xcconfig in Resources */,
 				A1B1C1D10003 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -163,7 +170,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "INFOPLIST=\"${BUILT_PRODUCTS_DIR}/${WRAPPER_NAME}/Info.plist\"\nif [ -f \"$INFOPLIST\" ]; then\n  for KEYNAME in GEMINI_API_KEY CLAUDE_API_KEY OPENAI_API_KEY GROQ_API_KEY SARVAM_API_KEY ELEVENLABS_API_KEY; do\n    eval RAW=\"\\${$KEYNAME}\"\n    RAW=\"${RAW#\\\"}\"\n    RAW=\"${RAW%\\\"}\"\n    if [ -n \"$RAW\" ]; then\n      /usr/libexec/PlistBuddy -c \"Delete :$KEYNAME\" \"$INFOPLIST\" 2>/dev/null\n      /usr/libexec/PlistBuddy -c \"Add :$KEYNAME string \\\"$RAW\\\"\" \"$INFOPLIST\"\n    fi\n  done\nfi\n";
+			shellScript = "INFOPLIST=\"${BUILT_PRODUCTS_DIR}/${WRAPPER_NAME}/Info.plist\"\nif [ -f \"$INFOPLIST\" ]; then\n  for KEYNAME in GEMINI_API_KEY CLAUDE_API_KEY OPENAI_API_KEY GROQ_API_KEY HUGGINGFACE_API_KEY AZURE_OPENAI_API_KEY AZURE_OPENAI_ENDPOINT AZURE_OPENAI_DEPLOYMENT AWS_BEDROCK_ACCESS_KEY GCP_VERTEX_API_KEY SARVAM_API_KEY ELEVENLABS_API_KEY AZURE_SPEECH_KEY AZURE_SPEECH_REGION AZURE_TRANSLATOR_KEY AZURE_TRANSLATOR_REGION LIBRETRANSLATE_URL LIBRETRANSLATE_API_KEY; do\n    eval RAW=\"\\${$KEYNAME}\"\n    RAW=\"${RAW#\\\"}\"\n    RAW=\"${RAW%\\\"}\"\n    if [ -n \"$RAW\" ]; then\n      /usr/libexec/PlistBuddy -c \"Delete :$KEYNAME\" \"$INFOPLIST\" 2>/dev/null\n      /usr/libexec/PlistBuddy -c \"Add :$KEYNAME string \\\"$RAW\\\"\" \"$INFOPLIST\"\n    fi\n  done\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -188,6 +195,7 @@
 /* Begin XCBuildConfiguration section */
 		A1B1C1DA0001 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = BB591B6B2F5F253C00CEC212 /* ApiKeys.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -219,6 +227,7 @@
 		};
 		A1B1C1DA0002 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = BB591B6B2F5F253C00CEC212 /* ApiKeys.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -244,6 +253,7 @@
 		};
 		A1B1C1DA0003 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = BB591B6B2F5F253C00CEC212 /* ApiKeys.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -273,6 +283,7 @@
 		};
 		A1B1C1DA0004 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = BB591B6B2F5F253C00CEC212 /* ApiKeys.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -340,6 +351,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = A1B1C1D40001 /* XCLocalSwiftPackageReference ".." */;
 			productName = SummaryToAudio;
+		};
+		A1B1C1D50004 /* TranslationClients */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A1B1C1D40001 /* XCLocalSwiftPackageReference ".." */;
+			productName = TranslationClients;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
