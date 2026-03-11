@@ -68,6 +68,9 @@ private struct App2ArticleRow: View {
             ZStack {
                 if isPlaying {
                     AudioWaveformView()
+                } else if isPaused {
+                    Image(systemName: "pause.fill")
+                        .font(.body)
                 } else {
                     Image(systemName: "speaker.wave.2")
                         .font(.body)
@@ -82,7 +85,7 @@ private struct App2ArticleRow: View {
             }
             .frame(width: 32, height: 32)
             .padding(8)
-            .background(Color.blue.opacity(0.1))
+            .background(isPaused ? Color.orange.opacity(0.15) : Color.blue.opacity(0.1))
             .cornerRadius(8)
             .onTapGesture {
                 if isEnabled { onPlayTap() }
