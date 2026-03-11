@@ -3,11 +3,13 @@ import Foundation
 public enum TTSProvider: String, CaseIterable, Sendable, Codable {
     case sarvam
     case elevenLabs
+    case system
 
     public var displayName: String {
         switch self {
         case .sarvam: return "Sarvam AI"
         case .elevenLabs: return "ElevenLabs"
+        case .system: return "System (Free)"
         }
     }
 }
@@ -106,15 +108,59 @@ public enum ElevenLabsLanguage: String, CaseIterable, Sendable, Codable {
     public var languageCode: String { rawValue }
 }
 
+// MARK: - System TTS (AVSpeechSynthesizer — no API key required)
+public enum SystemTTSLanguage: String, CaseIterable, Sendable, Codable {
+    case english    = "en-US"
+    case french     = "fr-FR"
+    case german     = "de-DE"
+    case spanish    = "es-ES"
+    case italian    = "it-IT"
+    case portuguese = "pt-BR"
+    case arabic     = "ar-SA"
+    case chinese    = "zh-CN"
+    case japanese   = "ja-JP"
+    case korean     = "ko-KR"
+    case hindi      = "hi-IN"
+    case dutch      = "nl-NL"
+    case russian    = "ru-RU"
+    case polish     = "pl-PL"
+    case turkish    = "tr-TR"
+
+    public var displayName: String {
+        switch self {
+        case .english:    return "English"
+        case .french:     return "French"
+        case .german:     return "German"
+        case .spanish:    return "Spanish"
+        case .italian:    return "Italian"
+        case .portuguese: return "Portuguese"
+        case .arabic:     return "Arabic"
+        case .chinese:    return "Chinese"
+        case .japanese:   return "Japanese"
+        case .korean:     return "Korean"
+        case .hindi:      return "Hindi"
+        case .dutch:      return "Dutch"
+        case .russian:    return "Russian"
+        case .polish:     return "Polish"
+        case .turkish:    return "Turkish"
+        }
+    }
+
+    /// BCP 47 language tag passed to AVSpeechUtterance.
+    public var languageCode: String { rawValue }
+}
+
 // MARK: - Provider-agnostic effective language (avoids coupling TTS clients)
 public enum EffectiveTTSLanguage: Sendable {
     case sarvam(SpeechLanguage)
     case elevenLabs(ElevenLabsLanguage)
+    case system(SystemTTSLanguage)
 
     public var cacheKey: String {
         switch self {
         case .sarvam(let lang): return lang.languageCode
         case .elevenLabs(let lang): return lang.languageCode
+        case .system(let lang): return "sys_\(lang.languageCode)"
         }
     }
 
@@ -122,6 +168,7 @@ public enum EffectiveTTSLanguage: Sendable {
         switch self {
         case .sarvam(let lang): return lang.displayName
         case .elevenLabs(let lang): return lang.displayName
+        case .system(let lang): return lang.displayName
         }
     }
 
@@ -129,6 +176,7 @@ public enum EffectiveTTSLanguage: Sendable {
         switch self {
         case .sarvam(let lang): return lang == .english
         case .elevenLabs(let lang): return lang == .english
+        case .system(let lang): return lang == .english
         }
     }
 
@@ -137,14 +185,16 @@ public enum EffectiveTTSLanguage: Sendable {
         switch self {
         case .sarvam: return .sarvam
         case .elevenLabs: return .elevenLabs
+        case .system: return .system
         }
     }
 
-    /// Cache key to use when translation fails and we fall back to English (cached or source). Sarvam: "en-IN"; ElevenLabs: "en".
+    /// Cache key to use when translation fails and we fall back to English (cached or source). Sarvam: "en-IN"; ElevenLabs: "en"; System: "sys_en-US".
     public var englishCacheKeyForFallback: String {
         switch self {
         case .sarvam: return SpeechLanguage.english.languageCode
         case .elevenLabs: return ElevenLabsLanguage.english.languageCode
+        case .system: return "sys_\(SystemTTSLanguage.english.languageCode)"
         }
     }
 }
@@ -157,6 +207,8 @@ public struct SpeechConfig: Sendable {
     public var sarvamLanguage: SpeechLanguage
     /// Used when provider is .elevenLabs.
     public var elevenLabsLanguage: ElevenLabsLanguage
+    /// Used when provider is .system.
+    public var systemLanguage: SystemTTSLanguage
     public var voice: String
     public var rate: Double
 
@@ -166,6 +218,7 @@ public struct SpeechConfig: Sendable {
         elevenLabsApiKey: String? = nil,
         sarvamLanguage: SpeechLanguage = .english,
         elevenLabsLanguage: ElevenLabsLanguage = .english,
+        systemLanguage: SystemTTSLanguage = .english,
         voice: String = "Rachel",
         rate: Double = 1.0
     ) {
@@ -174,6 +227,7 @@ public struct SpeechConfig: Sendable {
         self.elevenLabsApiKey = elevenLabsApiKey
         self.sarvamLanguage = sarvamLanguage
         self.elevenLabsLanguage = elevenLabsLanguage
+        self.systemLanguage = systemLanguage
         self.voice = voice
         self.rate = rate
     }
@@ -181,8 +235,9 @@ public struct SpeechConfig: Sendable {
     /// Effective language for the current provider (for cache key and API calls).
     public func effectiveLanguage() -> EffectiveTTSLanguage {
         switch provider {
-        case .sarvam: return .sarvam(sarvamLanguage)
+        case .sarvam:     return .sarvam(sarvamLanguage)
         case .elevenLabs: return .elevenLabs(elevenLabsLanguage)
+        case .system:     return .system(systemLanguage)
         }
     }
 }

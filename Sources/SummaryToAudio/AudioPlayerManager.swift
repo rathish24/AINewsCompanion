@@ -79,4 +79,14 @@ public final class AudioPlayerManager: NSObject, ObservableObject, AVAudioPlayer
     public func setError(_ error: String?) {
         self.error = error
     }
+
+    /// Used by SystemTTSClient to drive published state (AVSpeechSynthesizer handles its own audio).
+    public func setIsPlaying(_ playing: Bool) {
+        isPlaying = playing
+    }
+
+    /// Used by SystemTTSClient to drive published state.
+    public func setIsPaused(_ paused: Bool) {
+        isPaused = paused
+    }
 }

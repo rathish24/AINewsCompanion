@@ -10,6 +10,7 @@ struct ContentView: View {
     @State private var selectedTTSProvider: TTSProvider = Self.savedTTSProvider()
     @State private var selectedSarvamLanguage: SpeechLanguage = .english
     @State private var selectedElevenLabsLanguage: ElevenLabsLanguage = .english
+    @State private var selectedSystemLanguage: SystemTTSLanguage = .english
     @State private var showLanguageSelection = false
     @ObservedObject private var speaker = SummaryToAudio.shared
 
@@ -86,7 +87,7 @@ struct ContentView: View {
         selectedTTSProvider = provider
         speaker.stop()
         speaker.clearReplayCache()
-        speaker.configure(provider: provider, sarvamLanguage: selectedSarvamLanguage, elevenLabsLanguage: selectedElevenLabsLanguage)
+        speaker.configure(provider: provider, sarvamLanguage: selectedSarvamLanguage, elevenLabsLanguage: selectedElevenLabsLanguage, systemLanguage: selectedSystemLanguage)
     }
 
     private func providerChip(_ provider: AIProvider) -> some View {
@@ -107,9 +108,11 @@ struct ContentView: View {
     }
 
     private var effectiveTTSLanguage: EffectiveTTSLanguage {
-        selectedTTSProvider == .sarvam
-            ? .sarvam(selectedSarvamLanguage)
-            : .elevenLabs(selectedElevenLabsLanguage)
+        switch selectedTTSProvider {
+        case .sarvam:     return .sarvam(selectedSarvamLanguage)
+        case .elevenLabs: return .elevenLabs(selectedElevenLabsLanguage)
+        case .system:     return .system(selectedSystemLanguage)
+        }
     }
 
     private func setElevenLabsTranslatorIfNeeded() {
@@ -202,7 +205,7 @@ struct ContentView: View {
                         articles: skyArticleList,
                         playbackController: playbackController,
                         effectiveTTSLanguage: effectiveTTSLanguage,
-                        isTTSEnabled: selectedTTSProvider == .sarvam ? (effectiveSarvamAPIKey != nil) : (effectiveElevenLabsAPIKey != nil),
+                        isTTSEnabled: selectedTTSProvider == .sarvam ? (effectiveSarvamAPIKey != nil) : selectedTTSProvider == .elevenLabs ? (effectiveElevenLabsAPIKey != nil) : true,
                         onLongPress: { showLanguageSelection = true }
                     )
                 }
@@ -228,6 +231,7 @@ struct ContentView: View {
                 sarvamKey: effectiveSarvamAPIKey,
                 sarvamLanguage: selectedSarvamLanguage,
                 elevenLabsLanguage: selectedElevenLabsLanguage,
+                systemLanguage: selectedSystemLanguage,
                 libreTranslateBaseURL: Self.libreTranslateURL(),
                 libreTranslateAPIKey: Self.libreTranslateAPIKey()
             )
@@ -239,12 +243,17 @@ struct ContentView: View {
             setElevenLabsTranslatorIfNeeded()
             playbackController.stopPlayback()
             speaker.clearReplayCache()
-            speaker.configure(provider: selectedTTSProvider, sarvamLanguage: selectedSarvamLanguage, elevenLabsLanguage: newLang)
+            speaker.configure(provider: selectedTTSProvider, sarvamLanguage: selectedSarvamLanguage, elevenLabsLanguage: newLang, systemLanguage: selectedSystemLanguage)
         }
         .onChange(of: selectedSarvamLanguage) { _, newLang in
             playbackController.stopPlayback()
             speaker.clearReplayCache()
-            speaker.configure(provider: selectedTTSProvider, sarvamLanguage: newLang, elevenLabsLanguage: selectedElevenLabsLanguage)
+            speaker.configure(provider: selectedTTSProvider, sarvamLanguage: newLang, elevenLabsLanguage: selectedElevenLabsLanguage, systemLanguage: selectedSystemLanguage)
+        }
+        .onChange(of: selectedSystemLanguage) { _, newLang in
+            playbackController.stopPlayback()
+            speaker.clearReplayCache()
+            speaker.configure(provider: selectedTTSProvider, sarvamLanguage: selectedSarvamLanguage, elevenLabsLanguage: selectedElevenLabsLanguage, systemLanguage: newLang)
         }
         .overlay {
             if showLanguageSelection {
@@ -252,6 +261,7 @@ struct ContentView: View {
                     selectedTTSProvider: selectedTTSProvider,
                     selectedSarvamLanguage: $selectedSarvamLanguage,
                     selectedElevenLabsLanguage: $selectedElevenLabsLanguage,
+                    selectedSystemLanguage: $selectedSystemLanguage,
                     isPresented: $showLanguageSelection
                 )
             }
@@ -263,6 +273,7 @@ struct LanguageSelectionOverlay: View {
     let selectedTTSProvider: TTSProvider
     @Binding var selectedSarvamLanguage: SpeechLanguage
     @Binding var selectedElevenLabsLanguage: ElevenLabsLanguage
+    @Binding var selectedSystemLanguage: SystemTTSLanguage
     @Binding var isPresented: Bool
 
     var body: some View {
@@ -272,13 +283,17 @@ struct LanguageSelectionOverlay: View {
                 .onTapGesture { isPresented = false }
 
             VStack(spacing: 16) {
-                Text(selectedTTSProvider == .elevenLabs ? "Select Language (ElevenLabs)" : "Select Language (Sarvam AI)")
+                Text(selectedTTSProvider == .elevenLabs ? "Select Language (ElevenLabs)"
+                     : selectedTTSProvider == .sarvam ? "Select Language (Sarvam AI)"
+                     : "Select Language (System)")
                     .font(.headline)
 
                 if selectedTTSProvider == .sarvam {
                     sarvamChips
-                } else {
+                } else if selectedTTSProvider == .elevenLabs {
                     elevenLabsChips
+                } else {
+                    systemChips
                 }
             }
             .frame(maxHeight: 400)
@@ -351,6 +366,38 @@ struct LanguageSelectionOverlay: View {
                 .overlay(
                     RoundedRectangle(cornerRadius: 20)
                         .stroke(Color.blue.opacity(0.3), lineWidth: selectedElevenLabsLanguage == lang ? 0 : 1)
+                )
+                .clipShape(Capsule())
+        }
+    }
+
+    private var systemChips: some View {
+        ScrollView(.vertical, showsIndicators: true) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 100), spacing: 8)], spacing: 8) {
+                ForEach(SystemTTSLanguage.allCases, id: \.self) { lang in
+                    systemChip(lang)
+                }
+            }
+            .padding(.vertical, 4)
+        }
+        .frame(maxHeight: 320)
+    }
+
+    private func systemChip(_ lang: SystemTTSLanguage) -> some View {
+        Button {
+            selectedSystemLanguage = lang
+            isPresented = false
+        } label: {
+            Text(lang.displayName)
+                .font(.subheadline)
+                .fontWeight(.medium)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(selectedSystemLanguage == lang ? Color.blue : Color.white)
+                .foregroundStyle(selectedSystemLanguage == lang ? .white : .primary)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20)
+                        .stroke(Color.blue.opacity(0.3), lineWidth: selectedSystemLanguage == lang ? 0 : 1)
                 )
                 .clipShape(Capsule())
         }

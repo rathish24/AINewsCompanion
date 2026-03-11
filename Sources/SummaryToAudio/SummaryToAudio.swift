@@ -11,6 +11,7 @@ public final class SummaryToAudio: ObservableObject {
     private let sarvamClient = SarvamAIClient()
     private let elevenLabsClient = ElevenLabsClient()
     private let translationAPIClient = TranslationAPIClient()
+    private let systemTTSClient = SystemTTSClient()
     private var cancellables = Set<AnyCancellable>()
     /// When set, used to translate text for ElevenLabs non-English (overrides built-in translation API).
     private var elevenLabsTranslator: (@Sendable (String, String) async throws -> String)?
@@ -26,6 +27,10 @@ public final class SummaryToAudio: ObservableObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
+        systemTTSClient.onFinished = { [weak self] in
+            self?.playerManager.setIsPlaying(false)
+            self?.playerManager.setIsPaused(false)
+        }
     }
     
     /// Clears the in-memory replay cache so the next play always fetches/generates new audio. Call when the user switches TTS provider or language so previous (e.g. Sarvam Tamil) audio is never replayed.
@@ -42,6 +47,7 @@ public final class SummaryToAudio: ObservableObject {
         sarvamKey: String? = nil,
         sarvamLanguage: SpeechLanguage? = nil,
         elevenLabsLanguage: ElevenLabsLanguage? = nil,
+        systemLanguage: SystemTTSLanguage? = nil,
         libreTranslateBaseURL: String? = nil,
         libreTranslateAPIKey: String? = nil
     ) {
@@ -56,6 +62,7 @@ public final class SummaryToAudio: ObservableObject {
         if let key = sarvamKey { config.sarvamApiKey = key }
         if let lang = sarvamLanguage { config.sarvamLanguage = lang }
         if let lang = elevenLabsLanguage { config.elevenLabsLanguage = lang }
+        if let lang = systemLanguage { config.systemLanguage = lang }
         
         Task {
             if let sarvamKey = config.sarvamApiKey {
@@ -82,6 +89,9 @@ public final class SummaryToAudio: ObservableObject {
             return try await textForSarvamTTS(sourceText: text, language: lang)
         case .elevenLabs(let lang):
             return try await textForElevenLabsTTS(sourceText: text, language: lang)
+        case .system:
+            // AVSpeechSynthesizer speaks English text directly in any language voice.
+            return text
         }
     }
 
@@ -110,10 +120,19 @@ public final class SummaryToAudio: ObservableObject {
         let langKey = effective.cacheKey
 
         // Replay cache: only reuse when text, language, and provider all match (use effective.provider so UI is source of truth).
-        if text == lastText, langKey == lastLanguageKey, effective.provider == lastProvider, let data = lastAudioData {
-            print("SummaryToAudio: Replaying cached audio")
-            playerManager.play(data: data)
-            return
+        if text == lastText, langKey == lastLanguageKey, effective.provider == lastProvider {
+            if effective.provider == .system, case .system(let lang) = effective {
+                print("SummaryToAudio: Replaying via System TTS")
+                playerManager.setIsPlaying(true)
+                playerManager.setIsPaused(false)
+                systemTTSClient.speak(text: text, language: lang)
+                return
+            }
+            if let data = lastAudioData {
+                print("SummaryToAudio: Replaying cached audio")
+                playerManager.play(data: data)
+                return
+            }
         }
 
         // Use passed effective language as source of truth for TTS path (keeps in sync with UI even if config was stale).
@@ -129,7 +148,7 @@ public final class SummaryToAudio: ObservableObject {
                 textToSpeak = try await translateIfNeeded(text: text, effectiveLanguage: effective)
             }
 
-            let audioData: Data
+            let audioData: Data?
             switch (providerForTTS, effective) {
             case (.sarvam, .sarvam(let lang)):
                 // Sarvam-only: TTS via Sarvam AI only; translation (when needed) is done above via textForSarvamTTS/sarvamClient.translate.
@@ -139,18 +158,30 @@ public final class SummaryToAudio: ObservableObject {
                 // ElevenLabs-only: TTS via ElevenLabs; translation (when needed) is done above via textForElevenLabsTTS (translation API or custom translator). No Sarvam.
                 print("SummaryToAudio: Using ElevenLabs (multilingual) lang=\(lang.languageCode)")
                 audioData = try await elevenLabsClient.generateSpeech(text: textToSpeak, languageCode: lang.languageCode)
+            case (.system, .system(let lang)):
+                // System TTS: AVSpeechSynthesizer handles audio directly — no Data produced.
+                print("SummaryToAudio: Using System TTS lang=\(lang.languageCode)")
+                audioData = nil
+                lastText = textToSpeak
+                lastLanguageKey = langKey
+                lastProvider = providerForTTS
+                lastAudioData = nil
+                playerManager.setLoading(false)
+                playerManager.setIsPlaying(true)
+                playerManager.setIsPaused(false)
+                systemTTSClient.speak(text: textToSpeak, language: lang)
             default:
                 fatalError("Provider and effective language must match")
             }
 
-            print("SummaryToAudio: Received \(audioData.count) bytes of audio data")
-
-            lastAudioData = audioData
-            lastText = textToSpeak
-            lastLanguageKey = langKey
-            lastProvider = providerForTTS
-
-            playerManager.play(data: audioData)
+            if let audioData {
+                print("SummaryToAudio: Received \(audioData.count) bytes of audio data")
+                lastAudioData = audioData
+                lastText = textToSpeak
+                lastLanguageKey = langKey
+                lastProvider = providerForTTS
+                playerManager.play(data: audioData)
+            }
         } catch {
             print("SummaryToAudio ERROR: \(error.localizedDescription)")
             playerManager.setError(error.localizedDescription)
@@ -159,14 +190,27 @@ public final class SummaryToAudio: ObservableObject {
     }
     
     public func stop() {
+        systemTTSClient.stop()
         playerManager.stop()
     }
 
     public func pause() {
-        playerManager.pause()
+        if config.provider == .system {
+            systemTTSClient.pause()
+            playerManager.setIsPlaying(false)
+            playerManager.setIsPaused(true)
+        } else {
+            playerManager.pause()
+        }
     }
 
     public func resume() {
-        playerManager.resume()
+        if config.provider == .system {
+            systemTTSClient.resume()
+            playerManager.setIsPlaying(true)
+            playerManager.setIsPaused(false)
+        } else {
+            playerManager.resume()
+        }
     }
 }

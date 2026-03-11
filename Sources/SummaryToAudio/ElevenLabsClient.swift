@@ -82,6 +82,21 @@ actor ElevenLabsClient {
         }
 
         print("ElevenLabsClient: Successfully received \(data.count) bytes")
+
+        // DEBUG: Save MP3 to Documents so you can inspect/play the output outside the app
+        #if DEBUG
+        let timestamp = Int(Date().timeIntervalSince1970)
+        let filename = "elevenlabs_\(languageCode)_\(timestamp).mp3"
+        let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let fileURL = docsURL.appendingPathComponent(filename)
+        do {
+            try data.write(to: fileURL)
+            print("ElevenLabsClient: 🎵 MP3 saved to \(fileURL.path)")
+        } catch {
+            print("ElevenLabsClient: Failed to save MP3: \(error)")
+        }
+        #endif
+
         return data
     }
 }
