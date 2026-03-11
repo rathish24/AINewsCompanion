@@ -128,7 +128,7 @@ public enum NewsCompanionKit {
             } else {
                 endpoint = "https://bedrock-runtime.us-east-1.amazonaws.com"
             }
-            let modelId = config.model ?? "anthropic.claude-3-sonnet-20240229-v1:0"
+            let modelId = config.model ?? "meta.llama3-2-3b-instruct-v1:0"
             return AWSBedrockClient(endpoint: endpoint, modelId: modelId, apiKey: config.apiKey, timeout: config.timeout, additionalHeaders: config.additionalHeaders)
         case .googleCloudVertex:
             let project = config.gcpProject ?? ""

@@ -39,10 +39,12 @@ Article-to-summary clients for your own cloud models live in `Sources/NewsCompan
 | Client | Purpose | Pass your model via |
 |--------|--------|----------------------|
 | **AzureOpenAIClient** | Azure OpenAI deployments | `Config(..., provider: .azureOpenAI, model: "your-deployment", azureEndpoint: "https://your-resource.openai.azure.com", ...)` |
-| **AWSBedrockClient** | AWS Bedrock or custom proxy | `Config(..., provider: .awsBedrock, model: "anthropic.claude-3-sonnet-...", awsRegion: "us-east-1" or awsEndpoint: "https://...", ...)` |
+| **AWSBedrockClient** | AWS Bedrock or custom proxy | `Config(..., provider: .awsBedrock, model: "meta.llama3-2-3b-instruct-v1:0", awsRegion: "us-east-1" or awsEndpoint: "https://...", ...)` |
 | **GoogleCloudVertexClient** | Vertex AI | `Config(..., provider: .googleCloudVertex, model: "gemini-1.5-flash", gcpProject: "...", gcpLocation: "us-central1", ...)` |
 
 You can create and use these clients without a key for local validation; add your API key and endpoint when ready. All conform to `AICompleting` and return the same JSON summary format.
+
+**AWS Bedrock (Llama 3.2 3B):** Default model is `meta.llama3-2-3b-instruct-v1:0`. The client supports both Meta Llama 3.x (InvokeModel `prompt` / `generation`) and Anthropic Claude (message format). **Keys/credentials:** Direct Bedrock uses **IAM** (no single API key); you must sign requests with AWS SigV4 (e.g. use [AWS SDK for Swift](https://docs.aws.amazon.com/bedrock/latest/userguide/service_code_examples.html) or run behind a proxy). If you use a **proxy** that accepts an API key, set `Config.apiKey` to the proxy key and `Config.awsEndpoint` to the proxy URL. SampleApp reads `AWS_BEDROCK_ACCESS_KEY` (proxy key or leave empty for SDK/signing), `AWS_REGION` (e.g. `us-east-1`), and optional `AWS_ENDPOINT` / `AWS_MODEL_ID` from Info.plist.
 
 **Optional headers:** When your endpoint requires extra HTTP headers (e.g. Azure `x-ms-tenant-id`, custom auth, or tracing headers), pass them via `Config.additionalHeaders` or the client initializers:
 
