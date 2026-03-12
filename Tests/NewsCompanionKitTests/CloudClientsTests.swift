@@ -139,4 +139,5 @@ struct CloudClientsTests {
         )
         #expect(NewsCompanionKit.makeAIClient(config: gcpConfig) is GoogleCloudVertexClient)
     }
+
 }

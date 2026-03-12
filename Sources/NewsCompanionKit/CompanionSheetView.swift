@@ -99,7 +99,7 @@ public struct CompanionSheetView: View {
             case .apiError(let msg):
                 let isAuthLike = msg.lowercased().contains("api key") || msg.lowercased().contains("invalid") || msg.contains("403") || msg.lowercased().contains("access denied") || msg.lowercased().contains("authentication")
                 if isAuthLike, config.provider == .awsBedrock {
-                    return "AWS Bedrock requires IAM credentials (SigV4), not an API key. Use a proxy that accepts an API key and forwards to Bedrock, or sign requests with the AWS SDK. See README."
+                    return "AWS Bedrock requires IAM credentials (SigV4), not an API key. Use a proxy that accepts an API key and forwards to Bedrock. See README."
                 }
                 if isAuthLike {
                     return "Invalid or missing API key. Set your \(config.provider.displayName) key in ApiKeys.xcconfig and try again."

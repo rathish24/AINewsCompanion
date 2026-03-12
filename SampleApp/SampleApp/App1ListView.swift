@@ -12,9 +12,13 @@ struct App1ListView: View {
     let articles: [SkyArticle]
 
     var body: some View {
-        List(articles) { article in
-            App1ArticleRow(article: article, isEnabled: config != nil) {
-                companionURL = article.url
+        List {
+            Section {
+                ForEach(articles) { article in
+                    App1ArticleRow(article: article, isEnabled: config != nil) {
+                        companionURL = article.url
+                    }
+                }
             }
         }
         .listStyle(.insetGrouped)

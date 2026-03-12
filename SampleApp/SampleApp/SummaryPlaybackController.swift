@@ -127,7 +127,16 @@ final class SummaryPlaybackController: ObservableObject {
                     }
                 } catch {
                     if !Task.isCancelled, playingURL == url {
-                        speaker.playerManager.setError(error.localizedDescription)
+                        let errorMessage: String
+                        if let conv = error as? ConversationEngineError,
+                           case .aiFailed(let underlying) = conv,
+                           let clientError = underlying as? AIClientError,
+                           case .apiError(let msg) = clientError {
+                            errorMessage = msg
+                        } else {
+                            errorMessage = error.localizedDescription
+                        }
+                        speaker.playerManager.setError(errorMessage)
                         speaker.playerManager.setLoading(false)
                     }
                     preparingURL = nil

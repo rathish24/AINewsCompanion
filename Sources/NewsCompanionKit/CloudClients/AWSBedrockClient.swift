@@ -1,9 +1,7 @@
 import Foundation
 
 /// AWS Bedrock (or custom inference endpoint) client for article-to-summary.
-/// Conforms to `AICompleting`. Supports:
-/// - **Converse API** (Claude, Bearer token): `POST .../model/<id>/converse`, [Converse API](https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_Converse.html).
-/// - **InvokeModel** (Llama or Claude legacy): `POST .../model/<id>/invoke`.
+/// Conforms to `AICompleting`. Uses the **Converse API** only: `POST .../model/<id>/converse` with a single request/response shape for all models. [Converse API](https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_Converse.html).
 /// When `apiKey` is set and endpoint is Bedrock, use `Authorization: Bearer <apiKey>` (e.g. `AWS_BEARER_TOKEN_BEDROCK`). For a custom proxy, `x-api-key` is sent instead.
 public final class AWSBedrockClient: AICompleting, Sendable {
 
@@ -52,10 +50,8 @@ public final class AWSBedrockClient: AICompleting, Sendable {
 
     public func complete(prompt: String) async throws -> String {
         let isOfficialBedrock = endpoint.contains("amazonaws.com")
-        let useConverse = modelId.lowercased().contains("anthropic")
         let encodedModelId = modelId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? modelId
-        let pathSuffix = useConverse ? "converse" : "invoke"
-        let urlString = "\(endpoint)/model/\(encodedModelId)/\(pathSuffix)"
+        let urlString = "\(endpoint)/model/\(encodedModelId)/converse"
         guard let url = URL(string: urlString) else { throw AIClientError.apiError("Invalid AWS endpoint URL") }
 
         var request = URLRequest(url: url)
@@ -72,80 +68,63 @@ public final class AWSBedrockClient: AICompleting, Sendable {
         request.timeoutInterval = timeout
         additionalHeaders?.forEach { request.setValue($1, forHTTPHeaderField: $0) }
 
-        let body: [String: Any]
-        let isLlama = modelId.lowercased().contains("meta.llama")
-
-        if useConverse {
-            // Converse API: messages + inferenceConfig (matches curl with Bearer token).
-            body = [
-                "messages": [
-                    [
-                        "role": "user",
-                        "content": [["text": prompt]]
-                    ]
-                ],
-                "inferenceConfig": [
-                    "maxTokens": 4096,
-                    "temperature": 0.2,
-                    "topP": 0.9
-                ],
-                "system": [
-                    ["text": "You are a precise news companion. Always respond with valid JSON only."]
+        // Converse API only: same request shape for all models (no Llama/Anthropic-specific branches).
+        let body: [String: Any] = [
+            "messages": [
+                [
+                    "role": "user",
+                    "content": [["text": prompt]]
                 ]
-            ]
-        } else if isLlama {
-            let systemInstruction = "You are a precise news companion. Always respond with valid JSON only."
-            let formattedPrompt = Self.formatLlamaPrompt(system: systemInstruction, user: prompt)
-            body = [
-                "prompt": formattedPrompt,
-                "max_gen_len": 4096,
+            ],
+            "inferenceConfig": [
+                "maxTokens": 2500,
                 "temperature": 0.2,
-                "top_p": 0.9
+                "topP": 0.9
+            ],
+            "system": [
+                ["text": "You are a precise news companion. Always respond with valid JSON only."]
             ]
-        } else {
-            body = [
-                "anthropic_version": "bedrock-2023-05-31",
-                "max_tokens": 4096,
-                "temperature": 0.2,
-                "messages": [
-                    ["role": "user", "content": prompt]
-                ]
-            ]
+        ]
+
+        let bodyData = try JSONSerialization.data(withJSONObject: body)
+        request.httpBody = bodyData
+
+        // MARK: - Request logging
+        let bodyPreview = String(data: bodyData, encoding: .utf8) ?? "<invalid utf8>"
+        print("[AWSBedrockClient] REQUEST URL: \(urlString)")
+        print("[AWSBedrockClient] REQUEST METHOD: POST")
+        print("[AWSBedrockClient] REQUEST HEADERS: \(request.allHTTPHeaderFields ?? [:])")
+        print("[AWSBedrockClient] REQUEST BODY: \(bodyPreview)")
+
+        let (data, response): (Data, URLResponse)
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            print("[AWSBedrockClient] ERROR (network): \(error)")
+            throw error
         }
 
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse else { throw AIClientError.invalidResponse }
-        if http.statusCode != 200 {
-            throw AIClientError.apiError(Self.parseError(data, statusCode: http.statusCode))
-        }
-        if useConverse {
-            return try Self.parseConverseResponse(data)
-        }
-        return try isLlama ? Self.parseLlamaResponse(data) : Self.parseClaudeResponse(data)
-    }
-
-    /// Llama 3 chat template: system + user, then assistant turn.
-    private static func formatLlamaPrompt(system: String, user: String) -> String {
-        """
-        <|begin_of_text|><|start_header_id|>system<|end_header_id|>
-
-        \(system)<|eot_id|><|start_header_id|>user<|end_header_id|>
-
-        \(user)<|eot_id|><|start_header_id|>assistant<|end_header_id|>
-
-        """
-    }
-
-    private static func parseClaudeResponse(_ data: Data) throws -> String {
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let content = json["content"] as? [[String: Any]],
-              let block = content.first,
-              let text = block["text"] as? String else {
+        guard let http = response as? HTTPURLResponse else {
+            print("[AWSBedrockClient] ERROR: response was not HTTPURLResponse")
             throw AIClientError.invalidResponse
         }
-        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let responseBodyString = String(data: data, encoding: .utf8) ?? "<invalid utf8>"
+        print("[AWSBedrockClient] RESPONSE STATUS: \(http.statusCode)")
+        print("[AWSBedrockClient] RESPONSE HEADERS: \(http.allHeaderFields)")
+        print("[AWSBedrockClient] RESPONSE BODY: \(responseBodyString)")
+
+        if http.statusCode != 200 {
+            let errorMessage = Self.parseError(data, statusCode: http.statusCode)
+            print("[AWSBedrockClient] API ERROR: \(errorMessage)")
+            throw AIClientError.apiError(errorMessage)
+        }
+        do {
+            return try Self.parseConverseResponse(data)
+        } catch {
+            print("[AWSBedrockClient] PARSE ERROR: \(error); response body was: \(responseBodyString)")
+            throw error
+        }
     }
 
     /// Converse API response: output.message.content[] with "text" blocks.
@@ -158,14 +137,6 @@ public final class AWSBedrockClient: AICompleting, Sendable {
         }
         let parts = content.compactMap { $0["text"] as? String }
         return parts.joined().trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private static func parseLlamaResponse(_ data: Data) throws -> String {
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let generation = json["generation"] as? String else {
-            throw AIClientError.invalidResponse
-        }
-        return generation.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private static func parseError(_ data: Data, statusCode: Int) -> String {
