@@ -198,7 +198,14 @@ final class SummaryPlaybackController: ObservableObject {
                     textToSpeak = fullText
                     print("[TTS] Fallback: using source text (English) | url: \(url.absoluteString) | chars: \(textToSpeak.count)")
                 }
-                effectiveForPlay = effectiveLanguage.provider == .sarvam ? .sarvam(.english) : .elevenLabs(.english)
+                switch effectiveLanguage.provider {
+                case .sarvam:
+                    effectiveForPlay = .sarvam(.english)
+                case .elevenLabs:
+                    effectiveForPlay = .elevenLabs(.english)
+                case .awsSpeech:
+                    effectiveForPlay = .awsPolly(.english)
+                }
                 translationSucceeded = false
                 TranslationCache.delete(url: url, languageCode: langKey, modelContext: modelContext)
             }

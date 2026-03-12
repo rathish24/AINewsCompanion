@@ -165,7 +165,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "INFOPLIST=\"${BUILT_PRODUCTS_DIR}/${WRAPPER_NAME}/Info.plist\"\nif [ -f \"$INFOPLIST\" ]; then\n  for KEYNAME in GEMINI_API_KEY CLAUDE_API_KEY OPENAI_API_KEY GROQ_API_KEY SARVAM_API_KEY ELEVENLABS_API_KEY HUGGINGFACE_API_KEY AZURE_OPENAI_API_KEY AZURE_OPENAI_ENDPOINT AZURE_OPENAI_DEPLOYMENT AWS_BEDROCK_ACCESS_KEY AWS_REGION AWS_ENDPOINT AWS_MODEL_ID GCP_VERTEX_API_KEY GCP_PROJECT GCP_LOCATION GCP_MODEL; do\n    eval RAW=\"\\${$KEYNAME}\"\n    RAW=\"${RAW#\\\"}\"\n    RAW=\"${RAW%\\\"}\"\n    if [ -n \"$RAW\" ]; then\n      /usr/libexec/PlistBuddy -c \"Delete :$KEYNAME\" \"$INFOPLIST\" 2>/dev/null\n      /usr/libexec/PlistBuddy -c \"Add :$KEYNAME string \\\"$RAW\\\"\" \"$INFOPLIST\"\n    fi\n  done\nfi\n";
+			shellScript = "INFOPLIST=\"${BUILT_PRODUCTS_DIR}/${WRAPPER_NAME}/Info.plist\"\nif [ -f \"$INFOPLIST\" ]; then\n  for KEYNAME in GEMINI_API_KEY CLAUDE_API_KEY OPENAI_API_KEY GROQ_API_KEY SARVAM_API_KEY ELEVENLABS_API_KEY HUGGINGFACE_API_KEY AZURE_OPENAI_API_KEY AZURE_OPENAI_ENDPOINT AZURE_OPENAI_DEPLOYMENT AWS_BEDROCK_ACCESS_KEY AWS_REGION AWS_ENDPOINT AWS_MODEL_ID AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_DEFAULT_REGION AWS_SESSION_TOKEN LIBRETRANSLATE_URL LIBRETRANSLATE_API_KEY GCP_VERTEX_API_KEY GCP_PROJECT GCP_LOCATION GCP_MODEL; do\n    eval RAW=\"\\${$KEYNAME}\"\n    RAW=\"${RAW#\\\"}\"\n    RAW=\"${RAW%\\\"}\"\n    if [ -n \"$RAW\" ]; then\n      /usr/libexec/PlistBuddy -c \"Delete :$KEYNAME\" \"$INFOPLIST\" 2>/dev/null\n      /usr/libexec/PlistBuddy -c \"Add :$KEYNAME string \\\"$RAW\\\"\" \"$INFOPLIST\"\n    fi\n  done\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

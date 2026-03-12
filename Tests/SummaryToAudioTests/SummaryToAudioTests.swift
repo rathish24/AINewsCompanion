@@ -18,6 +18,13 @@ final class SummaryToAudioTests: XCTestCase {
         XCTAssertEqual(config.effectiveLanguage().cacheKey, "hi-IN")
         let configEL = SpeechConfig(provider: .elevenLabs, sarvamLanguage: .tamil, elevenLabsLanguage: .german, rate: 1.0)
         XCTAssertEqual(configEL.effectiveLanguage().cacheKey, "de")
+        let configAWS = SpeechConfig(provider: .awsSpeech, sarvamLanguage: .english, elevenLabsLanguage: .english, awsPollyLanguage: .french)
+        XCTAssertEqual(configAWS.effectiveLanguage().cacheKey, "fr-FR")
+        guard case .awsPolly(let lang) = configAWS.effectiveLanguage() else {
+            XCTFail("Expected .awsPolly(lang) for awsSpeech provider")
+            return
+        }
+        XCTAssertEqual(lang, .french)
     }
 
     func testElevenLabsLanguageCodes() {
@@ -32,11 +39,20 @@ final class SummaryToAudioTests: XCTestCase {
         XCTAssertEqual(ElevenLabsLanguage.allCases.count, 29)
     }
 
+    func testElevenLabsLanguageAWSTranslateTargetCode() {
+        XCTAssertEqual(ElevenLabsLanguage.english.awsTranslateTargetCode, "en")
+        XCTAssertEqual(ElevenLabsLanguage.french.awsTranslateTargetCode, "fr")
+        XCTAssertEqual(ElevenLabsLanguage.filipino.awsTranslateTargetCode, "tl")
+        XCTAssertEqual(ElevenLabsLanguage.tamil.awsTranslateTargetCode, "ta")
+    }
+
     func testEffectiveTTSLanguageIsEnglish() {
         XCTAssertTrue(EffectiveTTSLanguage.sarvam(.english).isEnglish)
         XCTAssertFalse(EffectiveTTSLanguage.sarvam(.hindi).isEnglish)
         XCTAssertTrue(EffectiveTTSLanguage.elevenLabs(.english).isEnglish)
         XCTAssertFalse(EffectiveTTSLanguage.elevenLabs(.french).isEnglish)
+        XCTAssertTrue(EffectiveTTSLanguage.awsPolly(.english).isEnglish)
+        XCTAssertFalse(EffectiveTTSLanguage.awsPolly(.french).isEnglish)
     }
 
     func testEffectiveTTSLanguageCacheKey() {
@@ -46,11 +62,15 @@ final class SummaryToAudioTests: XCTestCase {
         XCTAssertEqual(EffectiveTTSLanguage.elevenLabs(.english).cacheKey, "en")
         XCTAssertEqual(EffectiveTTSLanguage.elevenLabs(.french).cacheKey, "fr")
         XCTAssertEqual(EffectiveTTSLanguage.elevenLabs(.tamil).cacheKey, "ta")
+        XCTAssertEqual(EffectiveTTSLanguage.awsPolly(.english).cacheKey, "en-US")
+        XCTAssertEqual(EffectiveTTSLanguage.awsPolly(.french).cacheKey, "fr-FR")
+        XCTAssertEqual(EffectiveTTSLanguage.awsPolly(.hindi).cacheKey, "hi-IN")
     }
 
     func testEffectiveTTSLanguageProvider() {
         XCTAssertEqual(EffectiveTTSLanguage.sarvam(.tamil).provider, .sarvam)
         XCTAssertEqual(EffectiveTTSLanguage.elevenLabs(.french).provider, .elevenLabs)
+        XCTAssertEqual(EffectiveTTSLanguage.awsPolly(.french).provider, .awsSpeech)
     }
 
     func testEffectiveTTSLanguageEnglishCacheKeyForFallback() {
@@ -58,6 +78,8 @@ final class SummaryToAudioTests: XCTestCase {
         XCTAssertEqual(EffectiveTTSLanguage.sarvam(.hindi).englishCacheKeyForFallback, "en-IN")
         XCTAssertEqual(EffectiveTTSLanguage.elevenLabs(.french).englishCacheKeyForFallback, "en")
         XCTAssertEqual(EffectiveTTSLanguage.elevenLabs(.german).englishCacheKeyForFallback, "en")
+        XCTAssertEqual(EffectiveTTSLanguage.awsPolly(.french).englishCacheKeyForFallback, "en-US")
+        XCTAssertEqual(EffectiveTTSLanguage.awsPolly(.hindi).englishCacheKeyForFallback, "en-US")
     }
     
     @MainActor
@@ -209,6 +231,47 @@ final class SummaryToAudioTests: XCTestCase {
             XCTAssertEqual(effective.cacheKey, "de")
         } else {
             XCTFail("Expected .elevenLabs(.german)")
+        }
+    }
+
+    // MARK: - AWS Polly (AWSpeech tab)
+
+    func testAWSPollyLanguageCodesAndTranslateTargets() {
+        XCTAssertEqual(AWSPollyLanguage.english.languageCode, "en-US")
+        XCTAssertEqual(AWSPollyLanguage.english.translateTargetCode, "en")
+        XCTAssertEqual(AWSPollyLanguage.french.languageCode, "fr-FR")
+        XCTAssertEqual(AWSPollyLanguage.french.translateTargetCode, "fr")
+        XCTAssertEqual(AWSPollyLanguage.hindi.languageCode, "hi-IN")
+        XCTAssertEqual(AWSPollyLanguage.hindi.translateTargetCode, "hi")
+        XCTAssertEqual(AWSPollyLanguage.japanese.languageCode, "ja-JP")
+        XCTAssertEqual(AWSPollyLanguage.japanese.translateTargetCode, "ja")
+    }
+
+    func testAWSPollyLanguage_EveryCaseHasTranslateTarget() {
+        for lang in AWSPollyLanguage.allCases {
+            let code = lang.translateTargetCode
+            XCTAssertFalse(code.isEmpty, "\(lang) must have non-empty translateTargetCode")
+            XCTAssertEqual(code.count, 2, "\(lang) translateTargetCode should be ISO 639-1 (e.g. en, fr)")
+        }
+    }
+
+    func testAWSPollyProvider_EveryLanguageSelection_EffectiveLanguageMatches() {
+        for pollyLang in AWSPollyLanguage.allCases {
+            let config = SpeechConfig(provider: .awsSpeech, sarvamLanguage: .english, elevenLabsLanguage: .english, awsPollyLanguage: pollyLang)
+            let effective = config.effectiveLanguage()
+            guard case .awsPolly(let lang) = effective else {
+                XCTFail("awsSpeech config must yield .awsPolly(lang), got \(effective) for \(pollyLang)")
+                return
+            }
+            XCTAssertEqual(lang, pollyLang)
+            XCTAssertEqual(effective.cacheKey, pollyLang.languageCode)
+            XCTAssertEqual(effective.provider, .awsSpeech)
+        }
+    }
+
+    func testAWSPollyLanguage_AllCasesPollySupported() {
+        for lang in AWSPollyLanguage.allCases {
+            XCTAssertTrue(lang.isPollySupported, "\(lang.rawValue) must be in Polly supported set for 100% confidence")
         }
     }
 }

@@ -48,11 +48,12 @@ actor ElevenLabsClient {
             throw NSError(domain: "ElevenLabsClient", code: 401, userInfo: [NSLocalizedDescriptionKey: "API Key not configured"])
         }
 
+        print("[ElevenLabs] generateSpeech called: textLength=\(text.count) chars, languageCode=\(languageCode).")
         var url = baseURL.appendingPathComponent("text-to-speech").appendingPathComponent(voiceId)
         var comp = URLComponents(url: url, resolvingAgainstBaseURL: false)!
         comp.queryItems = [URLQueryItem(name: "output_format", value: "mp3_44100_128")]
         url = comp.url ?? url
-        print("ElevenLabsClient: Posting to \(url.absoluteString) language=\(languageCode)")
+        print("[ElevenLabs] POST text-to-speech, voiceId=\(voiceId), languageCode=\(languageCode).")
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue(apiKey, forHTTPHeaderField: "xi-api-key")
@@ -81,7 +82,7 @@ actor ElevenLabsClient {
             throw NSError(domain: "ElevenLabsClient", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "API Error: \(errorMsg)"])
         }
 
-        print("ElevenLabsClient: Successfully received \(data.count) bytes")
+        print("[ElevenLabs] Successfully received \(data.count) bytes.")
         return data
     }
 }

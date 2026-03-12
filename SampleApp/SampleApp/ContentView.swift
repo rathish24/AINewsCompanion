@@ -10,7 +10,9 @@ struct ContentView: View {
     @State private var selectedTTSProvider: TTSProvider = Self.savedTTSProvider()
     @State private var selectedSarvamLanguage: SpeechLanguage = .english
     @State private var selectedElevenLabsLanguage: ElevenLabsLanguage = .english
+    @State private var selectedAWSPollyLanguage: AWSPollyLanguage = .english
     @State private var showLanguageSelection = false
+    @State private var showAWSLanguageSelection = false
     @ObservedObject private var speaker = SummaryToAudio.shared
 
     private static let providerKey = "NewsCompanionSelectedProvider"
@@ -46,6 +48,36 @@ struct ContentView: View {
         if let value = Bundle.main.object(forInfoDictionaryKey: "ELEVENLABS_API_KEY") as? String {
             let trimmed = value.trimmingCharacters(in: .whitespaces)
             if !trimmed.isEmpty, !trimmed.hasPrefix("YOUR_") { return trimmed }
+        }
+        return nil
+    }
+
+    private static func awsAccessKeyId() -> String? {
+        guard let value = Bundle.main.object(forInfoDictionaryKey: "AWS_ACCESS_KEY_ID") as? String else { return nil }
+        let t = value.trimmingCharacters(in: .whitespaces)
+        return t.isEmpty || t.hasPrefix("YOUR_") ? nil : t
+    }
+
+    private static func awsSecretAccessKey() -> String? {
+        guard let value = Bundle.main.object(forInfoDictionaryKey: "AWS_SECRET_ACCESS_KEY") as? String else { return nil }
+        let t = value.trimmingCharacters(in: .whitespaces)
+        return t.isEmpty || t.hasPrefix("YOUR_") ? nil : t
+    }
+
+    private static func awsSessionToken() -> String? {
+        guard let value = Bundle.main.object(forInfoDictionaryKey: "AWS_SESSION_TOKEN") as? String else { return nil }
+        let t = value.trimmingCharacters(in: .whitespaces)
+        return t.isEmpty || t.hasPrefix("YOUR_") ? nil : t
+    }
+
+    private static func awsRegionForSpeech() -> String? {
+        // Prefer AWS_DEFAULT_REGION if present (matches aws cli), else fall back to AWS_REGION.
+        let keys = ["AWS_DEFAULT_REGION", "AWS_REGION"]
+        for k in keys {
+            if let value = Bundle.main.object(forInfoDictionaryKey: k) as? String {
+                let t = value.trimmingCharacters(in: .whitespaces)
+                if !t.isEmpty, !t.hasPrefix("YOUR_") { return t }
+            }
         }
         return nil
     }
@@ -86,7 +118,18 @@ struct ContentView: View {
         selectedTTSProvider = provider
         speaker.stop()
         speaker.clearReplayCache()
-        speaker.configure(provider: provider, sarvamLanguage: selectedSarvamLanguage, elevenLabsLanguage: selectedElevenLabsLanguage)
+        speaker.configure(
+            provider: provider,
+            elevenLabsKey: effectiveElevenLabsAPIKey,
+            sarvamKey: effectiveSarvamAPIKey,
+            awsAccessKeyId: Self.awsAccessKeyId(),
+            awsSecretAccessKey: Self.awsSecretAccessKey(),
+            awsSessionToken: Self.awsSessionToken(),
+            awsRegion: Self.awsRegionForSpeech(),
+            sarvamLanguage: selectedSarvamLanguage,
+            elevenLabsLanguage: selectedElevenLabsLanguage,
+            awsPollyLanguage: selectedAWSPollyLanguage
+        )
     }
 
     private func providerChip(_ provider: AIProvider) -> some View {
@@ -107,12 +150,22 @@ struct ContentView: View {
     }
 
     private var effectiveTTSLanguage: EffectiveTTSLanguage {
-        selectedTTSProvider == .sarvam
-            ? .sarvam(selectedSarvamLanguage)
-            : .elevenLabs(selectedElevenLabsLanguage)
+        switch selectedTTSProvider {
+        case .sarvam:
+            return .sarvam(selectedSarvamLanguage)
+        case .elevenLabs:
+            return .elevenLabs(selectedElevenLabsLanguage)
+        case .awsSpeech:
+            return .awsPolly(selectedAWSPollyLanguage)
+        }
     }
 
+    /// When ElevenLabs is selected: default (English) → no translation, pass to ElevenLabs. When user selects another language (long-press): use AWS Translate if configured, else LLM translator.
     private func setElevenLabsTranslatorIfNeeded() {
+        if Self.awsAccessKeyId() != nil, Self.awsSecretAccessKey() != nil, Self.awsRegionForSpeech() != nil {
+            SummaryToAudio.shared.setElevenLabsTranslator(nil)
+            return
+        }
         guard let config = companionConfig else {
             SummaryToAudio.shared.setElevenLabsTranslator(nil)
             return
@@ -202,8 +255,24 @@ struct ContentView: View {
                         articles: skyArticleList,
                         playbackController: playbackController,
                         effectiveTTSLanguage: effectiveTTSLanguage,
-                        isTTSEnabled: selectedTTSProvider == .sarvam ? (effectiveSarvamAPIKey != nil) : (effectiveElevenLabsAPIKey != nil),
-                        onLongPress: { showLanguageSelection = true }
+                        isTTSEnabled: {
+                            switch selectedTTSProvider {
+                            case .sarvam:
+                                return effectiveSarvamAPIKey != nil
+                            case .elevenLabs:
+                                return effectiveElevenLabsAPIKey != nil
+                            case .awsSpeech:
+                                return Self.awsAccessKeyId() != nil && Self.awsSecretAccessKey() != nil && Self.awsRegionForSpeech() != nil
+                            }
+                        }(),
+                        onLongPress: {
+                            switch selectedTTSProvider {
+                            case .sarvam, .elevenLabs:
+                                showLanguageSelection = true
+                            case .awsSpeech:
+                                showAWSLanguageSelection = true
+                            }
+                        }
                     )
                 }
                 .tabItem { Label("App 2", systemImage: "speaker.wave.2") }
@@ -226,8 +295,13 @@ struct ContentView: View {
                 provider: selectedTTSProvider,
                 elevenLabsKey: effectiveElevenLabsAPIKey,
                 sarvamKey: effectiveSarvamAPIKey,
+                awsAccessKeyId: Self.awsAccessKeyId(),
+                awsSecretAccessKey: Self.awsSecretAccessKey(),
+                awsSessionToken: Self.awsSessionToken(),
+                awsRegion: Self.awsRegionForSpeech(),
                 sarvamLanguage: selectedSarvamLanguage,
                 elevenLabsLanguage: selectedElevenLabsLanguage,
+                awsPollyLanguage: selectedAWSPollyLanguage,
                 libreTranslateBaseURL: Self.libreTranslateURL(),
                 libreTranslateAPIKey: Self.libreTranslateAPIKey()
             )
@@ -246,6 +320,11 @@ struct ContentView: View {
             speaker.clearReplayCache()
             speaker.configure(provider: selectedTTSProvider, sarvamLanguage: newLang, elevenLabsLanguage: selectedElevenLabsLanguage)
         }
+        .onChange(of: selectedAWSPollyLanguage) { _, newLang in
+            playbackController.stopPlayback()
+            speaker.clearReplayCache()
+            speaker.configure(awsPollyLanguage: newLang)
+        }
         .overlay {
             if showLanguageSelection {
                 LanguageSelectionOverlay(
@@ -255,6 +334,64 @@ struct ContentView: View {
                     isPresented: $showLanguageSelection
                 )
             }
+            if showAWSLanguageSelection {
+                AWSLanguageSelectionOverlay(
+                    selectedLanguage: $selectedAWSPollyLanguage,
+                    isPresented: $showAWSLanguageSelection
+                )
+            }
+        }
+    }
+}
+
+private struct AWSLanguageSelectionOverlay: View {
+    @Binding var selectedLanguage: AWSPollyLanguage
+    @Binding var isPresented: Bool
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.3)
+                .ignoresSafeArea()
+                .onTapGesture { isPresented = false }
+
+            VStack(spacing: 16) {
+                Text("Select Language (AWS Polly)")
+                    .font(.headline)
+
+                ScrollView(.vertical, showsIndicators: true) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 10)], spacing: 10) {
+                        ForEach(AWSPollyLanguage.allCases, id: \.self) { lang in
+                            langChip(lang)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+            .frame(maxHeight: 340)
+            .padding(24)
+            .background(Color(.secondarySystemBackground))
+            .cornerRadius(20)
+            .shadow(radius: 20)
+        }
+    }
+
+    private func langChip(_ lang: AWSPollyLanguage) -> some View {
+        Button {
+            selectedLanguage = lang
+            isPresented = false
+        } label: {
+            Text(lang.displayName)
+                .font(.subheadline)
+                .fontWeight(.medium)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(selectedLanguage == lang ? Color.blue : Color.white)
+                .foregroundStyle(selectedLanguage == lang ? .white : .primary)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20)
+                        .stroke(Color.blue.opacity(0.3), lineWidth: selectedLanguage == lang ? 0 : 1)
+                )
+                .clipShape(Capsule())
         }
     }
 }
