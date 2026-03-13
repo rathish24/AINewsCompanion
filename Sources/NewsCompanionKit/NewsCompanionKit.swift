@@ -120,16 +120,15 @@ public enum NewsCompanionKit {
             let deployment = config.model ?? "gpt-4o-mini"
             return AzureOpenAIClient(endpoint: endpoint, deployment: deployment, apiKey: config.apiKey, timeout: config.timeout, additionalHeaders: config.additionalHeaders)
         case .awsBedrock:
-            let endpoint: String
-            if let custom = config.awsEndpoint, !custom.isEmpty {
-                endpoint = custom
-            } else if let region = config.awsRegion, !region.isEmpty {
-                endpoint = "https://bedrock-runtime.\(region).amazonaws.com"
-            } else {
-                endpoint = "https://bedrock-runtime.us-east-1.amazonaws.com"
-            }
-            let modelId = config.model ?? "meta.llama3-2-3b-instruct-v1:0"
-            return AWSBedrockClient(endpoint: endpoint, modelId: modelId, apiKey: config.apiKey, timeout: config.timeout, additionalHeaders: config.additionalHeaders)
+            
+            let endpoint = "https://bedrock-runtime.eu-west-2.amazonaws.com/model/amazon.nova-micro-v1:0/converse"
+            
+            let modelId = "amazon.nova-micro-v1:0"
+            
+            let apiKey = config.apiKey ?? ""
+            
+            print("apiKey --- \(apiKey)")
+            return AWSBedrockClient(endpoint: endpoint, modelId: modelId, apiKey: apiKey, timeout: config.timeout, additionalHeaders: config.additionalHeaders)
         case .googleCloudVertex:
             let project = config.gcpProject ?? ""
             let location = config.gcpLocation ?? "us-central1"

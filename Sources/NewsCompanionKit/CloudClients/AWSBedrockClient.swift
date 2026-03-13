@@ -49,22 +49,20 @@ public final class AWSBedrockClient: AICompleting, Sendable {
     }
 
     public func complete(prompt: String) async throws -> String {
-        let isOfficialBedrock = endpoint.contains("amazonaws.com")
-        let encodedModelId = modelId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? modelId
-        let urlString = "\(endpoint)/model/\(encodedModelId)/converse"
-        guard let url = URL(string: urlString) else { throw AIClientError.apiError("Invalid AWS endpoint URL") }
-
-        var request = URLRequest(url: url)
+        //Hardcoded endpoints
+        let urlString = URL(string: endpoint)!
+        var request = URLRequest(url: urlString)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        if !apiKey.isEmpty {
-            if isOfficialBedrock {
-                request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-            } else {
-                request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
-            }
-        }
+//        if !apiKey.isEmpty {
+//            if isOfficialBedrock {
+//                request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+//            } else {
+//                request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+//            }
+//        }
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.timeoutInterval = timeout
         additionalHeaders?.forEach { request.setValue($1, forHTTPHeaderField: $0) }
 
