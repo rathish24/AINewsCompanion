@@ -19,6 +19,10 @@ public enum AWSTranslateServiceError: Error, LocalizedError {
 /// Amazon Translate client (direct AWS, SigV4). Decoupled from TTS clients.
 /// API: POST https://translate.{region}.amazonaws.com with target `AWSShineFrontendService_20170701.TranslateText`.
 /// Docs: https://docs.aws.amazon.com/translate/latest/APIReference/welcome.html
+///
+/// Two entry points:
+/// - **translate(text:sourceLanguageCode:targetLanguageCode:)** — Real-time path (e.g. AWS Polly); kept for existing flows.
+/// - **translateWithBaseAPI(text:sourceLanguageCode:targetLanguageCode:)** — Base TranslateText API (single POST per chunk, same as curl). Use for App 2 + ElevenLabs.
 public actor AWSTranslateServiceClient {
     /// API limit 10,000 bytes; we use 9,000 for safety (same as `TranslationClients.AWSTranslateClient`).
     public static let maxBytesPerRequest = 9_000
@@ -41,6 +45,36 @@ public actor AWSTranslateServiceClient {
         self.timeout = timeout
     }
 
+    /// Base TranslateText API: POST with Content-Type application/x-amz-json-1.1, X-Amz-Target AWSShineFrontendService_20170701.TranslateText, body { Text, SourceLanguageCode, TargetLanguageCode }. Use for App 2 + ElevenLabs.
+    public func translateWithBaseAPI(text: String, sourceLanguageCode: String = "en", targetLanguageCode: String) async throws -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return text }
+
+        guard let credentials, let region else { throw AWSTranslateServiceError.notConfigured }
+
+        let endpoint = "https://translate.\(region).amazonaws.com"
+        guard let url = URL(string: endpoint) else { throw AWSTranslateServiceError.invalidURL }
+
+        let chunks = chunksByBytes(for: trimmed, maxUTF8Bytes: Self.maxBytesPerRequest)
+        if chunks.count > 1 {
+            print("[AWS Translate Base API] Chunked into \(chunks.count) requests (max \(Self.maxBytesPerRequest) bytes each).")
+        }
+        var results: [String] = []
+        for chunk in chunks {
+            let translated = try await translateOneBase(
+                chunk: chunk,
+                sourceLanguageCode: sourceLanguageCode,
+                targetLanguageCode: targetLanguageCode,
+                url: url,
+                credentials: credentials,
+                region: region
+            )
+            results.append(translated)
+        }
+        return results.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "  ", with: " ")
+    }
+
+    /// Real-time path: same API shape, kept for AWS Polly and other existing flows. Do not remove.
     public func translate(text: String, sourceLanguageCode: String = "en", targetLanguageCode: String) async throws -> String {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return text }
@@ -72,7 +106,8 @@ public actor AWSTranslateServiceClient {
         return result
     }
 
-    private func translateOne(
+    /// Single request matching base curl: POST, Content-Type application/x-amz-json-1.1, X-Amz-Target, body { Text, SourceLanguageCode, TargetLanguageCode }, Authorization AWS4-HMAC-SHA256.
+    private func translateOneBase(
         chunk: String,
         sourceLanguageCode: String,
         targetLanguageCode: String,
@@ -109,6 +144,24 @@ public actor AWSTranslateServiceClient {
             throw AWSTranslateServiceError.apiError(msg)
         }
         return try Self.parseResponse(data)
+    }
+
+    private func translateOne(
+        chunk: String,
+        sourceLanguageCode: String,
+        targetLanguageCode: String,
+        url: URL,
+        credentials: AWSSigV4Signer.Credentials,
+        region: String
+    ) async throws -> String {
+        try await translateOneBase(
+            chunk: chunk,
+            sourceLanguageCode: sourceLanguageCode,
+            targetLanguageCode: targetLanguageCode,
+            url: url,
+            credentials: credentials,
+            region: region
+        )
     }
 
     private static func parseResponse(_ data: Data) throws -> String {

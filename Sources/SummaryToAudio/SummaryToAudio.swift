@@ -136,22 +136,22 @@ public final class SummaryToAudio: ObservableObject {
             print("[ElevenLabs flow] Default language (English): no translation, passing \(sourceText.count) chars directly to ElevenLabs.")
             return sourceText
         }
-        // Non-English: use AWS Translate when configured (English summary → target language → ElevenLabs).
+        // Non-English: use AWS Translate base API when configured (App 2 + ElevenLabs: POST TranslateText, same as base curl).
         if let accessKeyId = config.awsAccessKeyId,
            let secret = config.awsSecretAccessKey,
            let region = config.awsRegion,
            !accessKeyId.trimmingCharacters(in: .whitespaces).isEmpty,
            !secret.trimmingCharacters(in: .whitespaces).isEmpty,
            !region.trimmingCharacters(in: .whitespaces).isEmpty {
-            print("[ElevenLabs flow] Non-English (\(language.languageCode)): calling AWS Translate (en → \(language.awsTranslateTargetCode)), then ElevenLabs. Source text: \(sourceText.count) chars.")
+            print("[ElevenLabs flow] Non-English (\(language.languageCode)): calling AWS Translate base API (en → \(language.awsTranslateTargetCode)), then ElevenLabs. Source text: \(sourceText.count) chars.")
             await awsTranslateClient.configure(
                 accessKeyId: accessKeyId,
                 secretAccessKey: secret,
                 sessionToken: config.awsSessionToken,
                 region: region
             )
-            let translated = try await awsTranslateClient.translate(text: sourceText, sourceLanguageCode: "en", targetLanguageCode: language.awsTranslateTargetCode)
-            print("[ElevenLabs flow] AWS Translate done. Translated text: \(translated.count) chars → sending to ElevenLabs.")
+            let translated = try await awsTranslateClient.translateWithBaseAPI(text: sourceText, sourceLanguageCode: "en", targetLanguageCode: language.awsTranslateTargetCode)
+            print("[ElevenLabs flow] AWS Translate base API done. Translated text: \(translated.count) chars → sending to ElevenLabs.")
             return translated
         }
         // Fallback when AWS is not configured: custom translator or TranslationAPIClient.
