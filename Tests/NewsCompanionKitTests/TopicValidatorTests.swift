@@ -43,25 +43,26 @@ struct TopicValidatorTests {
         #expect(nextLikeTitles.count == 1)
     }
 
-    @Test("Output is ordered by angle priority: recap before next before players")
+    @Test("Output is ordered by angle priority (details, players, timeline, next, … recap)")
     func outputRespectsAnglePriority() {
         let rawTopics = [
             topic("Key players", "Who are the main people or organizations mentioned in the article and what are their roles?"),
             topic("What happens next", "Based on the article, what are the most likely next developments after the ruling?"),
             topic("What happened", "Based on the article, what are the key events that occurred and led to this outcome?"),
-            topic("Why it matters", "Based on the article, why does this story matter to readers and policymakers?"),
-            topic("Biggest unknowns", "What important questions remain unanswered based on the article and official statements?")
+            topic("Biggest unknowns", "What important questions remain unanswered based on the article and official statements?"),
+            topic("Key details", "Based on the article, what evidence and numbers support the main claims?")
         ]
 
         let output = TopicValidator.process(raw: rawTopics, articleTitle: "Test ordering")
 
         #expect(output.count == 5)
         let titles = output.map { $0.title.lowercased() }
-        if let recapIdx = titles.firstIndex(where: { $0.contains("what happened") }),
+        // topics.json anglePriority: details, players, timeline, next, uncertainty, debate, recap, watchlist, other
+        if let playersIdx = titles.firstIndex(where: { $0.contains("key players") }),
            let nextIdx = titles.firstIndex(where: { $0.contains("what happens next") }),
-           let playersIdx = titles.firstIndex(where: { $0.contains("key players") }) {
-            #expect(recapIdx < nextIdx)
-            #expect(nextIdx < playersIdx)
+           let recapIdx = titles.firstIndex(where: { $0.contains("what happened") }) {
+            #expect(playersIdx < nextIdx)
+            #expect(nextIdx < recapIdx)
         }
     }
 

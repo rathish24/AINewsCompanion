@@ -5,6 +5,20 @@ import Testing
 @Suite("Conversation Engine Tests")
 struct ConversationEngineTests {
 
+    @Test("Bundled conversation.json loads (refined format with outputSchema)")
+    func bundledConversationConfigLoads() {
+        let config = ConversationPromptConfig.loadBundled()
+        #expect(!config.intro.isEmpty)
+        #expect(!config.jsonStructure.isEmpty)
+        #expect(config.jsonStructure.contains("summary"))
+        #expect(config.jsonStructure.contains("topics"))
+        #expect(config.jsonStructure.contains("factChecks"))
+        #expect(config.rules.count >= 1)
+        #expect(!config.articleTitleLabel.isEmpty)
+        #expect(!config.articleTextLabel.isEmpty)
+        #expect(!config.retrySuffix.isEmpty)
+    }
+
     @Test("Multi-sentence topic summary is preserved without truncation")
     func preservesTopicSummary() async throws {
         let summary = """

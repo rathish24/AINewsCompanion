@@ -33,8 +33,9 @@ public struct TopicValidatorConfig: Codable, Sendable {
 /// All rules are driven by `TopicValidatorConfig` (bundled JSON or future API payload).
 enum TopicValidator {
 
+    /// Must match angle names in topics.json (e.g. "details", "recap", "players").
     enum TopicAngle: String, CaseIterable, Sendable {
-        case recap, next, players, impact, uncertainty, timeline, debate, watchlist, other
+        case recap, next, players, details, impact, uncertainty, timeline, debate, watchlist, other
     }
 
     struct ValidatedTopic {

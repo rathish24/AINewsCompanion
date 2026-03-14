@@ -12,15 +12,54 @@ public struct ConversationPromptConfig: Codable, Sendable {
 
     static func loadBundled() -> ConversationPromptConfig {
         guard let url = Bundle.module.url(forResource: "conversation", withExtension: "json"),
-              let data = try? Data(contentsOf: url),
-              let config = try? JSONDecoder().decode(ConversationPromptConfig.self, from: data) else {
+              let data = try? Data(contentsOf: url) else {
+            fatalError("conversation.json missing or invalid in NewsCompanionKit bundle")
+        }
+        if let config = try? JSONDecoder().decode(ConversationPromptConfig.self, from: data) {
+            return config
+        }
+        guard let config = parseRefinedFormat(data) else {
             fatalError("conversation.json missing or invalid in NewsCompanionKit bundle")
         }
         return config
     }
 
     static func config(from jsonData: Data) throws -> ConversationPromptConfig {
-        try JSONDecoder().decode(ConversationPromptConfig.self, from: jsonData)
+        if let config = try? JSONDecoder().decode(ConversationPromptConfig.self, from: jsonData) {
+            return config
+        }
+        guard let config = ConversationPromptConfig.parseRefinedFormat(jsonData) else {
+            throw NSError(domain: "ConversationPromptConfig", code: -1, userInfo: [NSLocalizedDescriptionKey: "conversation.json invalid: expected intro, rules, labels, and either jsonStructure or outputSchema"])
+        }
+        return config
+    }
+
+    /// Parses the refined format that uses "outputSchema" object instead of "jsonStructure" string.
+    private static func parseRefinedFormat(_ data: Data) -> ConversationPromptConfig? {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let intro = json["intro"] as? String,
+              let rules = json["rules"] as? [String],
+              let articleTitleLabel = json["articleTitleLabel"] as? String,
+              let articleTextLabel = json["articleTextLabel"] as? String,
+              let retrySuffix = json["retrySuffix"] as? String else { return nil }
+        let jsonStructure: String
+        if let schemaString = json["jsonStructure"] as? String {
+            jsonStructure = schemaString
+        } else if let outputSchema = json["outputSchema"] {
+            let options: JSONSerialization.WritingOptions = [.sortedKeys, .prettyPrinted]
+            let schemaData = (try? JSONSerialization.data(withJSONObject: outputSchema, options: options)) ?? Data()
+            jsonStructure = String(data: schemaData, encoding: .utf8) ?? "{}"
+        } else {
+            return nil
+        }
+        return ConversationPromptConfig(
+            intro: intro,
+            jsonStructure: jsonStructure,
+            rules: rules,
+            articleTitleLabel: articleTitleLabel,
+            articleTextLabel: articleTextLabel,
+            retrySuffix: retrySuffix
+        )
     }
 }
 

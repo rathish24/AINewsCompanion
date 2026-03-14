@@ -1,31 +1,72 @@
 {
-  "intro": "You are a precise news companion. Based only on the article below, return a single JSON object with this exact structure. Use only the keys below. No markdown, no code fence. Accuracy is more important than completeness or style.",
-  "jsonStructure": "{\n  \"summary\": {\n    \"oneLiner\": \"The city council voted 7-2 to approve the new transit plan after months of debate.\",\n    \"bullets\": [\"The plan adds three new bus routes serving the east side.\", \"Construction starts in March and finishes by December.\", \"The $45 million budget comes from federal transit grants.\"],\n    \"whyItMatters\": \"The plan addresses years of complaints about limited public transit in underserved neighborhoods. Residents and businesses along the new routes stand to benefit from improved access.\"\n  },\n  \"topics\": [\n    { \"title\": \"What happened\", \"prompt\": \"Based on the article, what decision did the council make and what does the transit plan include?\", \"summary\": \"The council voted 7-2 to approve the new transit plan after months of debate. The article says the plan adds three new bus routes serving the east side.\" },\n    { \"title\": \"Why it matters\", \"prompt\": \"Based on the article, why does the transit plan matter for residents and local access?\", \"summary\": \"The article says the plan responds to years of complaints about limited public transit in underserved neighborhoods. Residents and businesses along the new routes stand to benefit from improved access.\" },\n    { \"title\": \"What happens next\", \"prompt\": \"Based on the article, what steps follow the council vote and when does construction begin?\", \"summary\": \"Construction on the three new bus routes is scheduled to start in March. The transit authority must finalize contractor bids and route maps before work begins.\" },\n    { \"title\": \"Key players\", \"prompt\": \"Who led the push for the transit plan and who opposed it in the council vote?\", \"summary\": \"Council member Rivera championed the plan citing east-side demand, while members Park and Liu voted against it over budget concerns. The transit authority director called the vote a milestone.\" },\n    { \"title\": \"Biggest unknowns\", \"prompt\": \"Based on the article, what important details remain unclear about the transit plan rollout?\", \"summary\": \"The article does not detail how the $45 million budget splits across the three routes or what share covers construction versus operations. It also leaves open which contractors will be selected before March.\" }\n  ],\n  \"factChecks\": [\n    { \"claim\": \"The plan costs $45 million funded entirely by federal grants.\", \"whatToVerify\": \"Check the transit authority budget documents to confirm the funding source and total amount.\" }\n  ]\n}",
-  "rules": [
-    "Use only information explicitly stated in the article or directly supported by it. If a detail is missing, leave it out rather than guessing.",
-    "Do not invent motives, hidden causes, future outcomes, timelines, or reactions that the article does not support.",
-    "Be conservative when the article is incomplete or breaking. Prefer neutral wording such as 'the article does not yet say' instead of speculation.",
-    "Preserve important names, organizations, places, numbers, dates, and timeline details exactly when they appear in the article.",
-    "Do not use loaded adjectives like 'dramatic', 'shocking', 'unprecedented', or 'massive' unless the article itself uses that exact word. Prefer neutral phrasing.",
-    "If the article text is very short or appears truncated (fewer than 3 sentences), base all output strictly on the available text and note nothing beyond it. Do not pad with generic content.",
-    "summary.oneLiner: one clear sentence.",
-    "summary.oneLiner: identify the main actor, main event, and most important outcome or development in plain language.",
-    "summary.bullets: 3 to 5 short bullet points.",
-    "summary.bullets: each bullet must contain one distinct fact from the article; do not repeat the oneLiner in different words.",
-    "summary.whyItMatters: 2-4 sentences max.",
-    "summary.whyItMatters: explain the concrete impact, stakes, or consequences based on the article. If the impact is not explicit, state why the story is being closely watched without adding speculation.",
-    "topics: generate exactly 5 items.",
-    "topics.title: 2 to 5 words, concise, product-ready, and unique across the list.",
-    "topics.prompt: one sentence, article-specific, and clearly ask for follow-up analysis of that topic.",
-    "topics.summary: REQUIRED for every single topic. Never omit. Write exactly 2 to 3 sentences per topic that describe article-specific details, people, or stakes covered by that topic. Do not write placeholders like '2-3 sentences' or 'this topic covers...'. Write real content grounded in the article. See the example JSON above for the expected level of detail.",
-    "topics: use varied angles only when supported by the article, such as what happened, what happens next, key players, uncertainties, timeline, impact, what to watch, and competing arguments.",
-    "topics: do not use generic filler such as \"Learn more\", \"Deep dive\", \"More context\", or near-duplicate angles.",
-    "topics: do not invent facts, motives, or future outcomes not supported or reasonably implied by the article.",
-    "factChecks: 0 to 3 items. Only include if the article makes specific, verifiable claims worth checking.",
-    "If the article does not provide enough support for a field, keep the wording minimal and grounded instead of filling space.",
-    "BAD output example (do NOT produce output like this): { \"oneLiner\": \"A dramatic and unprecedented event shook the nation.\", \"bullets\": [\"Something big happened.\", \"Something big happened.\", \"More details emerged.\"], \"topics\": [{ \"title\": \"Learn more\", \"prompt\": \"Tell me more.\", \"summary\": \"This is interesting.\" }] }. This is bad because it uses loaded adjectives, repeats bullets, uses filler title, has a vague prompt, and the summary is one generic sentence."
-  ],
-  "articleTitleLabel": "Article title:",
-  "articleTextLabel": "Article text:",
-  "retrySuffix": "Important: Return valid JSON only, no markdown or extra text."
+    "intro": "You are a precise news summariser. Use ONLY the article title and article text provided below. Do not use outside knowledge. Return ONE valid JSON object only. No markdown and no code fences. If something is not stated in the article, do not guess; write 'The article does not say' and stop. Use UK English (en-GB).",
+    "outputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["summary", "topics", "factChecks"],
+        "properties": {
+            "summary": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["oneLiner", "bullets", "whyItMatters"],
+                "properties": {
+                    "oneLiner": { "type": "string", "minLength": 10 },
+                    "bullets": {
+                        "type": "array",
+                        "minItems": 3,
+                        "maxItems": 5,
+                        "items": { "type": "string", "minLength": 10 }
+                    },
+                    "whyItMatters": { "type": "string", "minLength": 10 }
+                }
+            },
+            "topics": {
+                "type": "array",
+                "minItems": 5,
+                "maxItems": 5,
+                "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["title", "prompt", "summary"],
+                    "properties": {
+                        "title": { "type": "string", "minLength": 2, "maxLength": 40 },
+                        "prompt": { "type": "string", "minLength": 10 },
+                        "summary": { "type": "string", "minLength": 20 }
+                    }
+                }
+            },
+            "factChecks": {
+                "type": "array",
+                "minItems": 0,
+                "maxItems": 3,
+                "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["claim", "whatToVerify"],
+                    "properties": {
+                        "claim": { "type": "string", "minLength": 10 },
+                        "whatToVerify": { "type": "string", "minLength": 10 }
+                    }
+                }
+            }
+        }
+    },
+    "rules": [
+        "Grounding: Use ONLY information explicitly stated in the article text. No external facts, no background context, no assumptions.",
+        "Attribution: If the article attributes a claim (e.g., 'police said', 'officials allege', 'the report found'), keep that attribution. Do not restate attributed claims as settled fact.",
+        "Uncertainty: Preserve qualifiers exactly (may, could, expected, preliminary, alleged). If the article is uncertain, your summary must be uncertain too.",
+        "Numbers and names: Copy names, organisations, places, money amounts, dates, vote counts, percentages, ages, times, and units exactly as written in the article. Do not convert time zones or currencies unless the article itself does.",
+        "One-liner: Write exactly one sentence stating the main actor, main event, and most important outcome or development.",
+        "Bullets: Write 3 to 5 bullets. Each bullet must be a distinct, concrete fact from the article. Do not rephrase the one-liner. Do not repeat the same fact across bullets.",
+        "Why it matters: 2 to 4 sentences. Explain stakes or concrete impact using only what the article states or directly supports. If impact is not explicit, say the article does not explain the impact.",
+        "Topics: Generate exactly 5 topic items with unique titles (2 to 5 words each). Each topic must cover a different angle that is actually present in the article (for example: what happened, key details, timeline, key players, competing claims, uncertainties, what happens next).",
+        "Topic prompts: Each prompt must be one sentence and should ask an article-specific follow-up question.",
+        "Topic summaries: Each topic summary must be exactly 2 to 3 sentences. If the article lacks detail for that topic, write a short summary that explicitly says what the article does not say, without filling space.",
+        "Fact checks: Include 0 to 3 items, only when the article makes specific, checkable claims (numbers, study results, official documents, legal claims, financial figures). Do not include opinions. Do not invent things to verify.",
+        "Internal support check (mandatory): Before you output JSON, silently verify each sentence you wrote is supported by the article text. If any sentence is not clearly supported, delete it or rewrite it to 'The article does not say'.",
+        "Output: Return valid JSON only. Use double quotes for all keys and string values. No trailing commas. No extra keys."
+    ],
+    "articleTitleLabel": "Article title:",
+    "articleTextLabel": "Article text:",
+    "retrySuffix": "Important: Return JSON only. Do not include markdown, commentary, or any text outside the JSON object."
 }
