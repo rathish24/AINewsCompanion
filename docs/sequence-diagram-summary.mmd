@@ -1,0 +1,46 @@
+%% App 1 sequence diagram — same flow as sequence-diagram.puml
+%% Edit and preview: Mermaid Live Editor (mermaid.live) or VS Code Mermaid extension
+%%
+sequenceDiagram
+    autonumber
+    title App 1 — AI Companion flow (cache, conversation.json, topics.json, Bedrock)
+
+    actor User
+    participant "App (Sheet)" as App
+    participant "Cache (SwiftData)" as Cache
+    participant "Article Fetcher" as Fetcher
+    participant "SwiftSoup (3rd party)" as SwiftSoup
+    participant "Conversation Engine" as Engine
+    participant "AWS Bedrock (3rd party)" as Bedrock
+    participant "Topic Validator" as Validator
+
+    User->>App: tap AI Companion (article URL)
+    App->>Cache: cachedResult(for: url)
+
+    alt cache hit
+        Cache-->>App: return cached CompanionResult
+        App->>User: display summary (sheet)
+    else cache miss
+        Cache-->>App: nil
+
+        App->>Fetcher: fetch(url)
+        Fetcher->>SwiftSoup: parse HTML
+        SwiftSoup-->>Fetcher: plain text (ArticleContent)
+        Fetcher-->>App: ArticleContent
+
+        App->>Engine: generate(article)
+        Note right of Engine: load conversation.json (prompt config: intro, rules, schema)
+        Note right of Engine: load topics.json (validator config: angles, rules)
+        Engine->>Engine: build prompt from conversation.json + article text
+        Engine->>Bedrock: complete(prompt)
+        Bedrock-->>Engine: JSON (summary + raw topics + factChecks)
+
+        Engine->>Engine: parse JSON, extract raw topics
+        Engine->>Validator: process(raw topics, topics.json config)
+        Validator->>Validator: validate, score, order (up to 5)
+        Validator-->>Engine: validated topics
+        Engine-->>App: CompanionResult
+
+        App->>Cache: save(result, for: url)
+        App->>User: display summary (sheet)
+    end

@@ -1,0 +1,64 @@
+' App 2 sequence diagram v2 — adds long-press → choose language → tap Audio plays in selected language.
+' Base: app2-sequence-diagram.puml. Do not modify the original.
+' Render: plantuml app2-sequence-diagram-v2.puml
+'
+@startuml App2_Sequence_V2
+!theme plain
+title App 2 — Audio: default English; long-press → choose language → tap again = play in chosen language
+
+actor User
+participant "App\n(Audio)" as App
+participant "Cache\n(SwiftData)" as Cache
+participant "Article\nFetcher" as Fetcher
+participant "SwiftSoup\n(3rd party)" as SwiftSoup
+participant "Conversation\nEngine" as Engine
+participant "AWS Bedrock\n(3rd party)" as Bedrock
+participant "Topic\nValidator" as Validator
+participant "SummaryToAudio" as TTS
+participant "ElevenLabs\n(3rd party)" as ElevenLabs
+
+== Default: tap Audio → play in English ==
+note over User, ElevenLabs: If user just taps Audio (no long-press), audio plays in **English** by default.
+User -> App: tap Audio (article URL)
+App -> Cache: cachedResult(for: url)
+
+alt cache hit
+  Cache --> App: return cached CompanionResult
+else cache miss
+  Cache --> App: nil
+
+  App -> Fetcher: fetch(url)
+  Fetcher -> SwiftSoup: parse HTML
+  SwiftSoup --> Fetcher: plain text (ArticleContent)
+  Fetcher --> App: ArticleContent
+
+  App -> Engine: generate(article)
+  note right of Engine
+    load conversation.json
+    load topics.json
+  end note
+  Engine -> Engine: build prompt
+  Engine -> Bedrock: complete(prompt)
+  Bedrock --> Engine: JSON
+  Engine -> Validator: process(raw topics, config)
+  Validator --> Engine: validated topics
+  Engine --> App: CompanionResult
+
+  App -> Cache: save(result, for: url)
+end
+
+App -> TTS: play(text: result.textForSpeech, effectiveLanguage)
+note right of TTS: default: English (no translate).\nIf user chose language: translate then speak in chosen language.
+TTS -> TTS: translate if non-English (per effectiveLanguage)
+TTS -> ElevenLabs: generateSpeech(text, languageCode)
+ElevenLabs --> TTS: audio data
+TTS -> User: play audio (English by default, or chosen language)
+
+== Optional: long-press → choose language → tap again = chosen language ==
+User -> App: long press Audio
+App -> User: show language picker (sheet)
+User -> App: select language (e.g. Tamil, French)
+App -> App: store effectiveTTSLanguage
+note over User, App: Next time user **taps Audio**, play uses chosen language (translate if non-English, then TTS in that language).
+
+@enduml

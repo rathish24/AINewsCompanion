@@ -409,12 +409,42 @@ Sarvam and ElevenLabs are decoupled: removing one does not require changes in th
 4. Topics are validated and ordered via `TopicValidator` using rules in `topics.json` (angles, blocklists, scoring, priority). Only validated chips are shown (1–5); no filler templates.
 5. The result is shown in the companion sheet (or returned from `generate` for custom use). Optional SwiftData cache stores results by URL to reduce API calls.
 
+### High-level architecture
+
+**App 1 — AI Companion (summary sheet)**  
+When the user taps the AI Companion button in App 1, the flow is: **URL → cache check** → on miss: **ArticleFetcher (SwiftSoup: HTML→text) → ConversationEngine** (loads `conversation.json` and `topics.json`) **→ AWS Bedrock (Nova Micro v1)** → **TopicValidator** (using `topics.json`) → **CompanionResult** → summary shown in the sheet.
+
+![App 1 — AI Companion flow](docs/architecture-summary.png)
+
+**App 2 — Audio (default English; long-press to choose language)**  
+Default: tap Audio → play in English. Optional: long-press → choose language → tap Audio again → play in chosen language (translate if non-English, then ElevenLabs TTS). Uses cache, Bedrock for summary, then Summary To Audio and ElevenLabs for playback.
+
+![App 2 — Audio flow](docs/architeture-audio.png)
+
+**PlantUML sequence diagrams**
+
+| App | PlantUML source | Flow |
+|-----|-----------------|------|
+| **App 1** | [docs/sequence-diagram-summary.puml](docs/sequence-diagram-summary.puml) | Tap AI Companion → cache check → on miss: fetch article, load conversation.json + topics.json, AWS Bedrock, TopicValidator → save & display summary in sheet. Third-party: SwiftSoup, AWS Bedrock. |
+| **App 2** | [docs/sequence-diagram-audio.puml](docs/sequence-diagram-audio.puml) | Default: tap Audio → play in English. Optional: long-press → choose language → tap Audio again → play in chosen language (translate if non-English, then ElevenLabs TTS). Cache, Bedrock, Summary To Audio. |
+
+Re-render from repo root: `plantuml -tpng docs/sequence-diagram-summary.puml` and `plantuml -tpng docs/sequence-diagram-audio.puml` (outputs PNGs in `docs/`). Short versions: `docs/sequence-diagram-short.puml`, `docs/sequence-diagram-audio-short.puml`. Alternative: [docs/sequence-diagram.mmd](docs/sequence-diagram.mmd) (Mermaid) for App 1 — use [mermaid.live](https://mermaid.live) to render.
+
 ## Project structure
 
 ```
 AINewsCompanion/
 ├── Package.swift
 ├── README.md
+├── docs/
+│   ├── architecture-summary.png      # High-level architecture App 1 (AI Companion flow)
+│   ├── architeture-audio.png         # High-level architecture App 2 (Audio flow, language selection)
+│   ├── architecture.png             # High-level architecture (App 1)
+│   ├── sequence-diagram-summary.puml         # PlantUML sequence diagram App 1 (full)
+│   ├── sequence-diagram-short-summary.puml   # PlantUML sequence diagram App 1 (PPT-friendly)
+│   ├── sequence-diagram.mmd          # Mermaid sequence diagram App 1 (same flow as .puml)
+│   ├── sequence-diagram-audio.puml   # PlantUML sequence diagram App 2 Audio (full, language selection)
+│   └── sequence-diagram-short-audio.puml  # PlantUML sequence diagram App 2 (PPT-friendly)
 ├── topics_prompt.md
 ├── Sources/
 │   └── NewsCompanionKit/

@@ -1,0 +1,47 @@
+' Short sequence diagram — PPT-friendly. No fetch/parse; all participants aligned.
+' Re-render: plantuml -tpng sequence-diagram-short.puml (or -tsvg for vector in PPT)
+'
+@startuml App1_Sequence_Short
+skinparam backgroundColor #FAFBFC
+skinparam sequenceArrowThickness 2
+skinparam roundcorner 12
+skinparam maxMessageSize 180
+skinparam responseMessageBelowArrow true
+skinparam ParticipantPadding 24
+skinparam BoxPadding 10
+skinparam Participant {
+  BackgroundColor #E3F2FD
+  BorderColor #1976D2
+  FontStyle normal
+}
+skinparam Note {
+  BackgroundColor #E8F5E9
+  BorderColor #43A047
+}
+
+title AI Companion — summary flow
+
+participant "User" as User
+participant "App" as App
+participant "Cache" as Cache
+participant "Conversation Engine" as Engine
+participant "AWS Bedrock" as Bedrock
+
+User -> App: tap AI Companion
+App -> Cache: get(url)
+
+alt cache miss
+  Cache --> App: miss
+  App -> Engine: generate(article)
+  note right of Engine: conversation.json\n+ topics.json
+  Engine -> Bedrock: complete(prompt)
+  Bedrock --> Engine: JSON
+  Engine -> Engine: validate topics
+  Engine --> App: CompanionResult
+  App -> Cache: save(result)
+  App --> User: show summary
+  
+else cache hit
+  Cache --> App: cached result
+  App --> User: show summary
+end
