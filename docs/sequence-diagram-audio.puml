@@ -1,10 +1,10 @@
-' App 2 sequence diagram v2 — adds long-press → choose language → tap Audio plays in selected language.
-' Base: app2-sequence-diagram.puml. Do not modify the original.
-' Render: plantuml app2-sequence-diagram-v2.puml
+' App 2 sequence diagram — audio: cache miss uses conversation.json only for the Bedrock prompt.
+' App 1 uses conversation.json + topics.json + TopicValidator for chips; App 2 only needs summary text → textForSpeech (see Models.textForSpeech).
+' Render: plantuml -tpng docs/sequence-diagram-audio.puml
 '
 @startuml App2_Sequence_V2
 !theme plain
-title App 2 — Audio: default English; long-press → choose language → tap again = play in chosen language
+title Quicklisten Architecture
 
 actor User
 participant "App\n(Audio)" as App
@@ -13,7 +13,6 @@ participant "Article\nFetcher" as Fetcher
 participant "SwiftSoup\n(3rd party)" as SwiftSoup
 participant "Conversation\nEngine" as Engine
 participant "AWS Bedrock\n(3rd party)" as Bedrock
-participant "Topic\nValidator" as Validator
 participant "SummaryToAudio" as TTS
 participant "ElevenLabs\n(3rd party)" as ElevenLabs
 
@@ -34,21 +33,25 @@ else cache miss
 
   App -> Engine: generate(article)
   note right of Engine
-    load conversation.json
-    load topics.json
+    load **conversation.json**
+    (prompt: intro, rules, output schema)
   end note
-  Engine -> Engine: build prompt
+  Engine -> Engine: build prompt from conversation.json + article text
   Engine -> Bedrock: complete(prompt)
-  Bedrock --> Engine: JSON
-  Engine -> Validator: process(raw topics, config)
-  Validator --> Engine: validated topics
+  Bedrock --> Engine: JSON (summary fields for TTS)
+  Engine -> Engine: parse JSON → CompanionResult
   Engine --> App: CompanionResult
 
   App -> Cache: save(result, for: url)
 end
 
 App -> TTS: play(text: result.textForSpeech, effectiveLanguage)
-note right of TTS: default: English (no translate).\nIf user chose language: translate then speak in chosen language.
+note right of TTS
+  **textForSpeech** = summary only
+  (one-liner, bullets, why it matters)
+  default: English (no translate).
+  If user chose language: translate then speak.
+end note
 TTS -> TTS: translate if non-English (per effectiveLanguage)
 TTS -> ElevenLabs: generateSpeech(text, languageCode)
 ElevenLabs --> TTS: audio data

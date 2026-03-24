@@ -1,6 +1,5 @@
-' App 2 short sequence diagram v2 — adds long-press → choose language; tap Audio plays in selected language.
-' Base: app2-sequence-diagram-short.puml. Do not modify the original.
-' Re-render: plantuml -tpng app2-sequence-diagram-short-v2.puml
+' App 2 short sequence diagram — aligned with docs/sequence-diagram-audio.puml (conversation.json only; no topics.json / TopicValidator in this flow).
+' Re-render: plantuml -tpng docs/sequence-diagram-short-audio.puml
 '
 @startuml App2_Sequence_Short_V2
 !theme plain
@@ -33,46 +32,61 @@ skinparam Title {
   FontSize 14
 }
 
-title App 2 — Audio: default English; long-press → choose language → tap again = chosen language
+title Quicklisten Architecture
 
 participant "User"
 participant "App"
 participant "Cache"
+participant "Fetcher"
+participant "SwiftSoup"
 participant "Engine"
 participant "AWS Bedrock"
 participant "Summary To Audio" as TTS
 participant "ElevenLabs"
 
 == Default: tap Audio → play in English ==
-note over User, ElevenLabs: Tap Audio without long-press → plays in **English** by default.
-User -> App: tap Audio
-App -> Cache: get(url)
+note over User, ElevenLabs: If user just taps Audio (no long-press), audio plays in **English** by default.
+User -> App: tap Audio (article URL)
+App -> Cache: cachedResult(for: url)
 
 alt cache miss
-  Cache --> App: miss
+  Cache --> App: nil
+  App -> Fetcher: fetch(url)
+  Fetcher -> SwiftSoup: parse HTML
+  SwiftSoup --> Fetcher: plain text (ArticleContent)
+  Fetcher --> App: ArticleContent
   App -> Engine: generate(article)
-  note right of Engine: conversation.json\n+ topics.json
+  note right of Engine
+    load **conversation.json**
+    (prompt: intro, rules, output schema)
+  end note
+  Engine -> Engine: build prompt from conversation.json + article text
   Engine -> Bedrock: complete(prompt)
-  Bedrock --> Engine: JSON
-  Engine -> Engine: validate topics
+  Bedrock --> Engine: JSON (summary fields for TTS)
+  Engine -> Engine: parse JSON → CompanionResult
   Engine --> App: CompanionResult
-  App -> Cache: save(result)
+  App -> Cache: save(result, for: url)
 
 else cache hit
-  Cache --> App: cached result
+  Cache --> App: cached CompanionResult
 end
 
-App -> TTS: play(text: textForSpeech, effectiveLanguage)
-note right of TTS: default: English. If user chose language: \ntranslate then speak in chosen language.
+App -> TTS: play(text: result.textForSpeech, effectiveLanguage)
+note right of TTS
+  **textForSpeech** = summary only
+  (one-liner, bullets, why it matters)
+  default: English. If user chose language: translate then speak.
+end note
+TTS -> TTS: translate if non-English (per effectiveLanguage)
 TTS -> ElevenLabs: generateSpeech(text, languageCode)
 ElevenLabs --> TTS: audio data
 TTS -> User: play audio (English by default, or chosen language)
 
 == Optional: long-press → choose language → tap again = chosen language ==
 User -> App: long press Audio
-App -> User: show language picker
-User -> App: select language
+App -> User: show language picker (sheet)
+User -> App: select language (e.g. Tamil, French)
 App -> App: store effectiveTTSLanguage
-note over User, App: Next **tap Audio** plays in chosen language \n(translate if non-English, then TTS).
+note over User, App: Next time user **taps Audio**, play uses chosen language (translate if non-English, then TTS in that language).
 
 @enduml
